@@ -1,0 +1,1895 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>毛利分析互動式資訊看板 | Gross Profit OS v2.0</title>
+    <meta name="description" content="V2.0 專業級毛利率分析看板，支援情境模擬、進階瀑布圖與樹狀圖分析">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --bg-base: #060912;
+            --sidebar-bg: #0d111c;
+            --card-bg: rgba(255, 255, 255, 0.04);
+            --card-hover: rgba(255, 255, 255, 0.07);
+            --border: rgba(255, 255, 255, 0.1);
+            --accent: #63b3ed;
+            --accent-glow: rgba(99, 179, 237, 0.3);
+            --success: #68d391;
+            --warning: #f6ad55;
+            --danger: #fc8181;
+            --purple: #b794f4;
+            --text-main: #e2e8f0;
+            --text-dim: #94a3b8;
+            --sidebar-width: 260px;
+            --header-height: 70px;
+            --glass: blur(12px) saturate(180%);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background: var(--bg-base);
+            color: var(--text-main);
+            display: flex;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(circle at 10% 10%, rgba(99, 179, 237, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 90%, rgba(104, 211, 145, 0.04) 0%, transparent 40%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .sidebar-logo {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .sidebar-brand {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .sidebar-v {
+            font-size: 10px;
+            color: var(--accent);
+            opacity: 0.8;
+        }
+
+        .nav-list {
+            padding: 16px 12px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .nav-item {
+            padding: 12px 16px;
+            border-radius: 10px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-dim);
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .nav-item:hover {
+            background: var(--card-bg);
+            color: var(--text-main);
+        }
+
+        .nav-item.active {
+            background: var(--accent);
+            color: #060912;
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .nav-icon {
+            font-size: 18px;
+        }
+
+        .main-wrapper {
+            margin-left: var(--sidebar-width);
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            height: var(--header-height);
+            padding: 0 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(6, 9, 18, 0.6);
+            backdrop-filter: var(--glass);
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            z-index: 900;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid transparent;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #060912;
+        }
+
+        .btn-primary:hover {
+            background: #90ccf4;
+            transform: translateY(-1px);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+        }
+
+        .btn-outline:hover {
+            background: var(--card-bg);
+        }
+
+        .btn-danger {
+            background: rgba(252, 129, 129, 0.1);
+            color: var(--danger);
+            border-color: rgba(252, 129, 129, 0.3);
+        }
+
+        .btn-danger:hover {
+            background: rgba(252, 129, 129, 0.2);
+        }
+
+        .btn-success {
+            background: rgba(104, 211, 145, 0.15);
+            color: var(--success);
+            border-color: rgba(104, 211, 145, 0.3);
+        }
+
+        .btn-success:hover {
+            background: rgba(104, 211, 145, 0.25);
+        }
+
+        .content {
+            padding: 32px;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+            animation: slideUp 0.4s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .grid-cols-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .grid-cols-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .grid-cols-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .grid-main {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            backdrop-filter: var(--glass);
+            transition: all 0.3s ease;
+            height: 100%;
+        }
+
+        .card:hover {
+            border-color: var(--accent);
+            background: var(--card-hover);
+            transform: translateY(-2px);
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-dim);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .card-h-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .kpi-val {
+            font-size: 32px;
+            font-weight: 800;
+            line-height: 1;
+            margin: 8px 0;
+        }
+
+        .kpi-trend {
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+
+        .kpi-trend.up {
+            background: rgba(104, 211, 145, 0.1);
+            color: var(--success);
+        }
+
+        .kpi-trend.down {
+            background: rgba(252, 129, 129, 0.1);
+            color: var(--danger);
+        }
+
+        .sim-panel {
+            background: rgba(99, 179, 237, 0.05);
+            border: 1px dashed var(--accent);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .sim-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 24px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-dim);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-val {
+            color: var(--accent);
+        }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: 12px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-dim);
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .alert {
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            margin-bottom: 16px;
+            border: 1px solid transparent;
+        }
+
+        .alert-warning {
+            background: rgba(246, 173, 85, 0.1);
+            border-color: rgba(246, 173, 85, 0.3);
+            color: var(--warning);
+        }
+
+        .alert-danger {
+            background: rgba(252, 129, 129, 0.1);
+            border-color: rgba(252, 129, 129, 0.3);
+            color: var(--danger);
+        }
+
+        .alert-info {
+            background: rgba(99, 179, 237, 0.1);
+            border-color: rgba(99, 179, 237, 0.3);
+            color: var(--accent);
+        }
+
+        .tag {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .dax-item {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 12px;
+            overflow: hidden;
+        }
+
+        .dax-head {
+            padding: 16px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dax-head:hover {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .dax-body {
+            padding: 0 16px 16px;
+            display: none;
+            border-top: 1px solid var(--border);
+        }
+
+        .dax-body.open {
+            display: block;
+            animation: fadeIn 0.3s;
+        }
+
+        pre {
+            background: #010409;
+            padding: 16px;
+            border-radius: 8px;
+            color: #79c0ff;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin-top: 12px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        #fileInput { display: none; }
+
+        #dropZone {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(10px);
+        }
+
+        #dropZone.active {
+            display: flex;
+        }
+
+        .drop-box {
+            border: 2px dashed var(--accent);
+            padding: 60px;
+            border-radius: 24px;
+            color: var(--accent);
+            font-size: 24px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .treemap-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            height: 380px;
+            align-content: flex-start;
+            padding: 4px;
+        }
+
+        .treemap-block {
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: 600;
+            cursor: default;
+            transition: all 0.2s;
+            min-height: 60px;
+        }
+
+        .treemap-block:hover {
+            filter: brightness(1.2);
+            transform: scale(1.02);
+        }
+
+        .treemap-block .tm-label {
+            font-size: 13px;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+
+        .treemap-block .tm-value {
+            font-size: 11px;
+            opacity: 0.85;
+            margin-top: 2px;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 3000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(6px);
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-box {
+            background: var(--sidebar-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-box h3 {
+            margin-bottom: 16px;
+            color: var(--accent);
+        }
+
+        .modal-box p, .modal-box li {
+            font-size: 14px;
+            color: var(--text-dim);
+            line-height: 1.8;
+        }
+
+        .modal-box ul {
+            padding-left: 20px;
+            margin: 8px 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="dropZone">
+        <div class="drop-box">拖放 Excel/CSV 檔案至此處匯入</div>
+    </div>
+
+    <div class="modal-overlay" id="templateModal">
+        <div class="modal-box">
+            <h3>範例資料格式說明</h3>
+            <p>Excel 檔案需包含以下工作表 (Sheet)，欄位名稱須完全一致：</p>
+            <ul>
+                <li><strong>月度數據</strong>：時間, 銷售收入, 銷售成本, 去年同期收入</li>
+                <li><strong>產品數據</strong>：產品名稱, 類別, 銷售單價, 單位成本, 銷售總量, 相對市占率, 市場成長率, BCG象限</li>
+                <li><strong>成本數據</strong>：成本大類, 成本小類, 金額</li>
+                <li><strong>客戶數據</strong>：客戶名稱, LTV總額, 毛利貢獻率, 購買頻率, 客戶等級</li>
+                <li><strong>地區數據</strong>：地區名稱, 毛利率, 配送效率, 售價溢價, 市場份額, 品牌知名度</li>
+                <li><strong>渠道數據</strong>：渠道名稱, 銷售額, 成本, 渠道類型</li>
+                <li><strong>促銷數據</strong>：活動名稱, 折扣率, 銷量增幅, 毛利變動, 活動類型</li>
+            </ul>
+            <p style="margin-top: 12px;">點擊「下載範例 Excel」取得預設資料模板。</p>
+            <div style="display: flex; gap: 12px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="downloadSampleExcel()">下載範例 Excel</button>
+                <button class="btn btn-outline" onclick="document.getElementById('templateModal').classList.remove('active')">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">M</div>
+            <div>
+                <div class="sidebar-brand">Gross Profit OS</div>
+                <div class="sidebar-v">Version 2.0 Ultimate</div>
+            </div>
+        </div>
+        <nav class="nav-list">
+            <div class="nav-item active" onclick="switchPage('p-overview', this)">
+                <span class="nav-icon">&#x1F4CA;</span>
+                <span>全局分析總覽</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('p-scenario', this)">
+                <span class="nav-icon">&#x2699;&#xFE0F;</span>
+                <span>利潤情境模擬</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('p-series', this)">
+                <span class="nav-icon">&#x1F4C8;</span>
+                <span>時間序列趨勢</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('p-bcg', this)">
+                <span class="nav-icon">&#x1F4E6;</span>
+                <span>產品組合(BCG)</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('p-geo', this)">
+                <span class="nav-icon">&#x1F30D;</span>
+                <span>地域渠道分析</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('p-cost', this)">
+                <span class="nav-icon">&#x1F4B0;</span>
+                <span>精細成本拆解</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('p-customer', this)">
+                <span class="nav-icon">&#x1F465;</span>
+                <span>客戶價值分析</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('p-promo', this)">
+                <span class="nav-icon">&#x1F3AF;</span>
+                <span>折扣促銷評估</span>
+            </div>
+            <div class="nav-item" onclick="switchPage('p-dax', this)">
+                <span class="nav-icon">&#x1F4D6;</span>
+                <span>DAX 知識庫</span>
+            </div>
+        </nav>
+        <div style="padding: 20px; border-top: 1px solid var(--border);">
+            <button class="btn btn-outline" style="width: 100%; justify-content: center; margin-bottom: 8px;" onclick="resetData()">&#x21BA; 重置範例資料</button>
+            <button class="btn btn-success" style="width: 100%; justify-content: center;" onclick="document.getElementById('templateModal').classList.add('active')">&#x2753; 匯入格式說明</button>
+        </div>
+    </aside>
+
+    <div class="main-wrapper">
+        <header class="header">
+            <div id="breadcrumb" style="font-size: 14px; color: var(--text-dim);">分析單元 / <span
+                    style="color: var(--text-main); font-weight: 600;" id="currentPageName">全局分析總覽</span></div>
+            <div class="header-actions">
+                <div id="lastUpdated" style="font-size: 12px; color: var(--text-dim); margin-right: 12px;"></div>
+                <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">匯入數據</button>
+                <button class="btn btn-outline" onclick="downloadSampleExcel()">下載範例Excel</button>
+                <button class="btn btn-outline" onclick="exportData()">匯出結果</button>
+            </div>
+        </header>
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" onchange="handleFile(event)">
+
+        <main class="content">
+            <!-- PAGE: OVERVIEW -->
+            <div class="page active" id="p-overview">
+                <div class="grid-cols-4" style="margin-bottom: 32px;">
+                    <div class="card">
+                        <div class="card-title">&#x1F4B0; 總營收 (REVENUE)</div>
+                        <div class="kpi-val" id="ov-rev">--</div>
+                        <div class="kpi-trend up" id="ov-rev-trend"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">&#x1F4E6; 總成本 (COGS)</div>
+                        <div class="kpi-val" id="ov-cost">--</div>
+                        <div class="kpi-trend down" id="ov-cost-trend"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">&#x1F48E; 總毛利 (GROSS PROFIT)</div>
+                        <div class="kpi-val" id="ov-profit">--</div>
+                        <div class="kpi-trend up" id="ov-profit-trend"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">&#x1F4C8; 平均毛利率 (MARGIN %)</div>
+                        <div class="kpi-val" id="ov-margin" style="color: var(--accent);">--</div>
+                        <div id="ov-margin-alert" style="font-size: 12px; margin-top: 8px;"></div>
+                    </div>
+                </div>
+
+                <div class="grid-main" style="margin-bottom: 24px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">毛利貢獻瀑布圖 (Revenue to Profit Waterfall)</div>
+                        </div>
+                        <div style="height: 350px; width: 100%;"><canvas id="waterfallChart"></canvas></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">品類獲利分佈</div>
+                        </div>
+                        <div style="height: 350px; width: 100%;"><canvas id="overviewPieChart"></canvas></div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <div class="card-h-title">產品毛利率一覽表</div>
+                    </div>
+                    <div class="table-container" id="productTableContainer"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-h-title">核心異常預警系統</div>
+                    </div>
+                    <div id="alertContainer"></div>
+                </div>
+            </div>
+
+            <!-- PAGE: SCENARIO SIMULATOR -->
+            <div class="page" id="p-scenario">
+                <div class="sim-panel">
+                    <div class="card-h-title" style="margin-bottom: 20px;">定價與成本變動模擬器 (Profit Simulator)</div>
+                    <div class="sim-grid">
+                        <div class="control-group">
+                            <div class="control-label">平均單價調整 <span class="control-val" id="sim-price-val">+0%</span></div>
+                            <input type="range" id="sim-price" min="-30" max="50" value="0" step="1" oninput="runSimulation()">
+                        </div>
+                        <div class="control-group">
+                            <div class="control-label">銷售總量變動 <span class="control-val" id="sim-qty-val">+0%</span></div>
+                            <input type="range" id="sim-qty" min="-50" max="100" value="0" step="1" oninput="runSimulation()">
+                        </div>
+                        <div class="control-group">
+                            <div class="control-label">單位成本漲跌 <span class="control-val" id="sim-cost-val">+0%</span></div>
+                            <input type="range" id="sim-cost" min="-30" max="30" value="0" step="1" oninput="runSimulation()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-cols-2" style="margin-bottom: 24px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">預測利潤結果</div>
+                        </div>
+                        <div style="display: flex; justify-content: space-around; padding: 20px 0;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 14px; color: var(--text-dim);">預測毛利率</div>
+                                <div id="sim-res-margin" style="font-size: 42px; font-weight: 800; color: var(--accent);">--%</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 14px; color: var(--text-dim);">預測毛利額</div>
+                                <div id="sim-res-profit" style="font-size: 42px; font-weight: 800; color: var(--success);">--</div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-around; padding: 10px 0; border-top: 1px solid var(--border); margin-top: 10px;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 12px; color: var(--text-dim);">毛利率變動</div>
+                                <div id="sim-margin-delta" style="font-size: 18px; font-weight: 700;">--</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 12px; color: var(--text-dim);">毛利額變動</div>
+                                <div id="sim-profit-delta" style="font-size: 18px; font-weight: 700;">--</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">基準 vs 預測對比</div>
+                        </div>
+                        <div style="height: 250px;"><canvas id="simSensitivityChart"></canvas></div>
+                    </div>
+                </div>
+                <div class="alert alert-info">
+                    <strong>模擬原理</strong>：本工具使用敏感度矩陣計算。當您調升價格時，系統會考慮價格彈性(預設 E=1.5)對銷量的影響。彈性效果: 價格上升10% => 銷量自動下降15%。
+                </div>
+            </div>
+
+            <!-- PAGE: SERIES -->
+            <div class="page" id="p-series">
+                <div class="card" style="margin-bottom: 24px;">
+                    <div class="card-header">
+                        <div class="card-h-title">月度毛利率趨勢與 YoY 按年增長對比</div>
+                    </div>
+                    <div style="height: 400px;"><canvas id="seriesTrendChart"></canvas></div>
+                </div>
+                <div class="grid-cols-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">月度營收與成本走勢</div>
+                        </div>
+                        <div style="height: 300px;"><canvas id="seriesRevCostChart"></canvas></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">連續毛利率下跌偵測</div>
+                        </div>
+                        <div id="consecutiveDropInfo" style="padding: 16px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PAGE: BCG -->
+            <div class="page" id="p-bcg">
+                <div class="grid-main" style="margin-bottom: 24px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">產品線效能氣泡圖 (BCG Matrix)</div>
+                        </div>
+                        <div style="height: 400px;"><canvas id="bcgMatrixChart"></canvas></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">象限分佈比例</div>
+                        </div>
+                        <div style="height: 400px;"><canvas id="bcgDonutChart"></canvas></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-h-title">產品 BCG 象限明細表</div>
+                    </div>
+                    <div class="table-container" id="bcgTableContainer"></div>
+                </div>
+            </div>
+
+            <!-- PAGE: GEO -->
+            <div class="page" id="p-geo">
+                <div class="grid-cols-2" style="margin-bottom: 24px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">地域毛利率雷達分布</div>
+                        </div>
+                        <div style="height: 400px;"><canvas id="geoRadarChart"></canvas></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">渠道 ROI 與成本效率</div>
+                        </div>
+                        <div style="height: 400px;"><canvas id="channelEfficiencyChart"></canvas></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-h-title">地區績效總表</div>
+                    </div>
+                    <div class="table-container" id="geoTableContainer"></div>
+                </div>
+            </div>
+
+            <!-- PAGE: COST -->
+            <div class="page" id="p-cost">
+                <div class="grid-main" style="margin-bottom: 24px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">成本結構樹狀圖 (Cost Treemap)</div>
+                        </div>
+                        <div id="costTreemapArea"></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">80/20 帕累托分析</div>
+                        </div>
+                        <div style="height: 400px;"><canvas id="paretoChartV2"></canvas></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-h-title">成本項目明細表</div>
+                    </div>
+                    <div class="table-container" id="costTableContainer"></div>
+                </div>
+            </div>
+
+            <!-- PAGE: CUSTOMER -->
+            <div class="page" id="p-customer">
+                <div class="grid-cols-2" style="margin-bottom: 24px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">客戶貢獻矩陣 (LTV vs Margin)</div>
+                        </div>
+                        <div style="height: 400px;"><canvas id="customerValueChart"></canvas></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">客戶等級分佈</div>
+                        </div>
+                        <div style="height: 400px;"><canvas id="customerTierChart"></canvas></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-h-title">客戶價值明細表</div>
+                    </div>
+                    <div class="table-container" id="customerTableContainer"></div>
+                </div>
+            </div>
+
+            <!-- PAGE: PROMO -->
+            <div class="page" id="p-promo">
+                <div class="grid-cols-2" style="margin-bottom: 24px;">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">折扣率與銷量增長敏感度分析</div>
+                        </div>
+                        <div style="height: 400px;"><canvas id="promoScatterChart"></canvas></div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-h-title">促銷活動 ROI 對比</div>
+                        </div>
+                        <div style="height: 400px;"><canvas id="promoROIChart"></canvas></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-h-title">促銷活動明細表</div>
+                    </div>
+                    <div class="table-container" id="promoTableContainer"></div>
+                </div>
+            </div>
+
+            <!-- PAGE: DAX -->
+            <div class="page" id="p-dax">
+                <div class="card-h-title" style="margin-bottom: 20px;">專業 DAX 函式手冊 (毛利分析專用)</div>
+                <div id="daxKnowledgeBox"></div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        // ===== GLOBAL STATE & CONSTANTS =====
+        let DATA = null;
+        let charts = {};
+        const TARGET_MARGIN = 0.35;
+        const PRICE_ELASTICITY = 1.5;
+
+        const UI = {
+            fmtMoney: (v) => {
+                if (Math.abs(v) >= 1e8) return 'NT$' + (v / 1e8).toFixed(2) + '億';
+                if (Math.abs(v) >= 1e4) return 'NT$' + (v / 1e4).toFixed(0) + '萬';
+                return 'NT$' + v.toLocaleString('zh-TW');
+            },
+            fmtPct: (v) => (v * 100).toFixed(1) + '%',
+            colors: ['#63b3ed', '#68d391', '#f6ad55', '#fc8181', '#b794f4', '#f687b3', '#76e4f7', '#faf089'],
+            treemapColors: ['#2563eb', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#0d9488']
+        };
+
+        // ===== COMPLETE SAMPLE DATA =====
+        const DEFAULT_DATA = {
+            monthly: [
+                { "時間": "2024-01", "銷售收入": 3850000, "銷售成本": 2502500, "去年同期收入": 3400000, "去年同期成本": 2278000 },
+                { "時間": "2024-02", "銷售收入": 3200000, "銷售成本": 2112000, "去年同期收入": 3100000, "去年同期成本": 2077000 },
+                { "時間": "2024-03", "銷售收入": 4100000, "銷售成本": 2583000, "去年同期收入": 3800000, "去年同期成本": 2508000 },
+                { "時間": "2024-04", "銷售收入": 4350000, "銷售成本": 2784000, "去年同期收入": 4100000, "去年同期成本": 2706000 },
+                { "時間": "2024-05", "銷售收入": 4700000, "銷售成本": 2867000, "去年同期收入": 4300000, "去年同期成本": 2838000 },
+                { "時間": "2024-06", "銷售收入": 5200000, "銷售成本": 3172000, "去年同期收入": 4800000, "去年同期成本": 3216000 },
+                { "時間": "2024-07", "銷售收入": 5600000, "銷售成本": 3416000, "去年同期收入": 5200000, "去年同期成本": 3432000 },
+                { "時間": "2024-08", "銷售收入": 5100000, "銷售成本": 3213000, "去年同期收入": 5300000, "去年同期成本": 3551000 },
+                { "時間": "2024-09", "銷售收入": 4450000, "銷售成本": 3026000, "去年同期收入": 4600000, "去年同期成本": 3036000 },
+                { "時間": "2024-10", "銷售收入": 4900000, "銷售成本": 3136000, "去年同期收入": 4700000, "去年同期成本": 3102000 },
+                { "時間": "2024-11", "銷售收入": 5800000, "銷售成本": 3596000, "去年同期收入": 5500000, "去年同期成本": 3575000 },
+                { "時間": "2024-12", "銷售收入": 6200000, "銷售成本": 3782000, "去年同期收入": 5900000, "去年同期成本": 3835000 }
+            ],
+            products: [
+                { "產品名稱": "經典休閒外套", "類別": "服飾類", "銷售單價": 1500, "單位成本": 870, "銷售總量": 1233, "相對市占率": 0.25, "市場成長率": 0.18, "BCG象限": "明星" },
+                { "產品名稱": "時尚皮帶包", "類別": "飾品類", "銷售單價": 2200, "單位成本": 1144, "銷售總量": 545, "相對市占率": 0.28, "市場成長率": 0.08, "BCG象限": "金牛" },
+                { "產品名稱": "機能運動鞋", "類別": "鞋類", "銷售單價": 2800, "單位成本": 1932, "銷售總量": 350, "相對市占率": 0.12, "市場成長率": 0.22, "BCG象限": "問題兒" },
+                { "產品名稱": "基本款棉T", "類別": "服飾類", "銷售單價": 500, "單位成本": 360, "銷售總量": 1300, "相對市占率": 0.08, "市場成長率": 0.03, "BCG象限": "瘦狗" },
+                { "產品名稱": "限量聯名夾克", "類別": "服飾類", "銷售單價": 4500, "單位成本": 2160, "銷售總量": 466, "相對市占率": 0.30, "市場成長率": 0.35, "BCG象限": "明星" },
+                { "產品名稱": "精品手錶", "類別": "飾品類", "銷售單價": 8500, "單位成本": 4250, "銷售總量": 120, "相對市占率": 0.15, "市場成長率": 0.12, "BCG象限": "金牛" },
+                { "產品名稱": "休閒帆布鞋", "類別": "鞋類", "銷售單價": 1200, "單位成本": 780, "銷售總量": 890, "相對市占率": 0.20, "市場成長率": 0.05, "BCG象限": "金牛" }
+            ],
+            costs: [
+                { "成本大類": "直接成本", "成本小類": "原材料採購", "金額": 8540000 },
+                { "成本大類": "直接成本", "成本小類": "直接人工", "金額": 3200000 },
+                { "成本大類": "直接成本", "成本小類": "物流運費", "金額": 1850000 },
+                { "成本大類": "直接成本", "成本小類": "包裝材料", "金額": 620000 },
+                { "成本大類": "間接成本", "成本小類": "廠房租金", "金額": 1200000 },
+                { "成本大類": "間接成本", "成本小類": "行銷廣告", "金額": 980000 },
+                { "成本大類": "間接成本", "成本小類": "設備折舊", "金額": 450000 },
+                { "成本大類": "間接成本", "成本小類": "水電雜支", "金額": 280000 }
+            ],
+            customers: [
+                { "客戶名稱": "台北旗艦大戶", "LTV總額": 1850000, "毛利貢獻率": 0.42, "購買頻率": 24, "客戶等級": "鑽石" },
+                { "客戶名稱": "中山路經銷", "LTV總額": 1420000, "毛利貢獻率": 0.40, "購買頻率": 18, "客戶等級": "金牌" },
+                { "客戶名稱": "MOMO品牌館", "LTV總額": 1100000, "毛利貢獻率": 0.39, "購買頻率": 36, "客戶等級": "金牌" },
+                { "客戶名稱": "新光三越專櫃", "LTV總額": 980000, "毛利貢獻率": 0.35, "購買頻率": 12, "客戶等級": "銀牌" },
+                { "客戶名稱": "蝦皮旗艦店", "LTV總額": 750000, "毛利貢獻率": 0.28, "購買頻率": 48, "客戶等級": "銀牌" },
+                { "客戶名稱": "高雄百貨經銷", "LTV總額": 620000, "毛利貢獻率": 0.33, "購買頻率": 10, "客戶等級": "銅牌" },
+                { "客戶名稱": "台中批發商", "LTV總額": 450000, "毛利貢獻率": 0.22, "購買頻率": 6, "客戶等級": "一般" },
+                { "客戶名稱": "PChome商城", "LTV總額": 380000, "毛利貢獻率": 0.25, "購買頻率": 30, "客戶等級": "一般" }
+            ],
+            regions: [
+                { "地區名稱": "台北", "毛利率": 85, "配送效率": 90, "售價溢價": 80, "市場份額": 70, "品牌知名度": 95 },
+                { "地區名稱": "新北", "毛利率": 75, "配送效率": 85, "售價溢價": 70, "市場份額": 60, "品牌知名度": 80 },
+                { "地區名稱": "台中", "毛利率": 72, "配送效率": 78, "售價溢價": 68, "市場份額": 55, "品牌知名度": 70 },
+                { "地區名稱": "高雄", "毛利率": 70, "配送效率": 75, "售價溢價": 65, "市場份額": 85, "品牌知名度": 60 },
+                { "地區名稱": "桃園", "毛利率": 68, "配送效率": 82, "售價溢價": 62, "市場份額": 45, "品牌知名度": 55 }
+            ],
+            channels: [
+                { "渠道名稱": "品牌官網", "銷售額": 8500000, "成本": 5100000, "渠道類型": "線上" },
+                { "渠道名稱": "MOMO/蝦皮", "銷售額": 12000000, "成本": 8400000, "渠道類型": "線上" },
+                { "渠道名稱": "直營門市", "銷售額": 15000000, "成本": 9000000, "渠道類型": "線下" },
+                { "渠道名稱": "百貨專櫃", "銷售額": 9500000, "成本": 6175000, "渠道類型": "線下" },
+                { "渠道名稱": "經銷批發", "銷售額": 7200000, "成本": 5400000, "渠道類型": "線下" }
+            ],
+            promotions: [
+                { "活動名稱": "春季新品85折", "折扣率": 0.15, "銷量增幅": 0.35, "毛利變動": -0.05, "活動類型": "季節促銷" },
+                { "活動名稱": "雙11全館8折", "折扣率": 0.20, "銷量增幅": 0.80, "毛利變動": -0.12, "活動類型": "節慶促銷" },
+                { "活動名稱": "會員日滿千折百", "折扣率": 0.10, "銷量增幅": 0.25, "毛利變動": -0.03, "活動類型": "會員促銷" },
+                { "活動名稱": "夏季清倉7折", "折扣率": 0.30, "銷量增幅": 1.20, "毛利變動": -0.18, "活動類型": "清倉促銷" },
+                { "活動名稱": "周年慶9折", "折扣率": 0.10, "銷量增幅": 0.40, "毛利變動": -0.02, "活動類型": "品牌活動" },
+                { "活動名稱": "買二送一", "折扣率": 0.33, "銷量增幅": 1.50, "毛利變動": -0.20, "活動類型": "捆綁促銷" },
+                { "活動名稱": "新客首購95折", "折扣率": 0.05, "銷量增幅": 0.15, "毛利變動": -0.01, "活動類型": "拉新活動" },
+                { "活動名稱": "聯名款限時折扣", "折扣率": 0.12, "銷量增幅": 0.60, "毛利變動": 0.02, "活動類型": "品牌活動" }
+            ]
+        };
+
+        const DAX_KNOWLEDGE = [
+            {
+                name: "1. 銷售收入 SUM",
+                code: "銷售收入 = SUM('F銷售訂單表'[銷售金額])",
+                desc: "直接加總銷售訂單表中的收入欄位，在當前 Filter Context 下自動完成篩選聚合。這是最基礎的度量值。"
+            },
+            {
+                name: "2. 銷售成本 SUM",
+                code: "銷售成本 = SUM('F銷售訂單表'[銷售成本])",
+                desc: "加總銷售訂單表中的成本欄位。注意：若成本欄位存在空值（Zero Inventory 問題），需配合 LASTNONBLANKVALUE 修正。"
+            },
+            {
+                name: "3. 銷售毛利 (引用度量值)",
+                code: "銷售毛利 = [銷售收入] - [銷售成本]",
+                desc: "毛利 = 收入 - 成本。建議引用已定義的度量值而非直接計算欄位，確保 Filter Context 一致性。"
+            },
+            {
+                name: "4. 銷售毛利率 DIVIDE (防除零)",
+                code: "銷售毛利率 = DIVIDE([銷售毛利], [銷售收入], 0)",
+                desc: "使用 DIVIDE 而非除號「/」，原因是 DIVIDE 會自動處理分母為零的情況並回傳 BLANK()，避免因零成本或零收入引發的錯誤。第三參數可設定替代值。\n\n常見陷阱：不要使用 [銷售毛利] / [銷售收入]，當收入為 0 時會觸發除以零錯誤。"
+            },
+            {
+                name: "5. 加權平均採購成本 (DIVIDE + SUM)",
+                code: "// 錯誤做法（簡單平均）\n平均採購成本_錯誤 = AVERAGE('F存貨變動表'[單位成本])\n// 例：採購1=800件@$135，採購2=200件@$174\n// 錯誤結果：($135+$174)/2 = $154.5  偏高！\n\n// 正確做法（加權平均）\n平均採購成本 = DIVIDE(\n    SUM('F存貨變動表'[采購入庫金額]),\n    SUM('F存貨變動表'[采購入庫數量])\n)\n// 正確結果：(800x$135 + 200x$174) / (800+200) = $142.8",
+                desc: "這是最容易犯錯的指標之一。錯誤做法是直接用 AVERAGE(單價)，完全忽略了「採購數量」的權重，導致計算結果失真。SUM 在當前上下文中自動篩選，無需額外 CALCULATE。"
+            },
+            {
+                name: "6. 零庫存成本修正 LASTNONBLANKVALUE",
+                code: "優化後單位成本 = CALCULATE(\n    LASTNONBLANKVALUE(\n        日期表[日期],       // 在日期序列上搜索\n        [單位成本]           // 目標度量值\n    ),\n    FILTER(\n        ALL(日期表),         // 移除日期的 Filter Context\n        日期表[日期] <= MAX(日期表[日期])  // 只看截至當前日期\n    )\n)",
+                desc: "業務問題場景：當某月有銷售但 ERP 系統中無期末庫存時，「成本 = 銷售數量 x 單位成本」公式會因單位成本為空而導致銷售成本為 0，不符合業務邏輯。此公式向前填充最後一個有效成本值。"
+            },
+            {
+                name: "7. 連續下降天數 (時間智能預警)",
+                code: "連續下降天數 =\nVAR X = MAX(日期表[日期])              // Step1: 定義當前日期\nVAR 所有日期 = VALUES(日期表[日期])\nVAR 下跌日期 = FILTER(所有日期,\n    [毛利率] < EARLIER([毛利率]))        // 所有毛利率下跌日\nVAR AA = EXCEPT(所有日期, 下跌日期)     // Step2: 找出上漲或持平的日期\nVAR BB = MAXX(\n    FILTER(AA, [日期列值] < X),         // Step3: 離當前最近的上漲日\n    [日期列值]\n)\nRETURN INT(X - BB)                      // Step4: 計算天數差",
+                desc: "商業意義：持續的價格折扣會讓消費者產生等待更低價的預期心理。監控連續下跌天數，是為了防止折扣策略失控，侵蝕品牌價值和長期利潤。"
+            },
+            {
+                name: "8. 矩陣總計修正 MAXX + VALUES",
+                code: "// 問題：總計行顯示整個期間最大連續下跌天數 (如5)\n// 而非期末的實際值 (如2)\n\n// 修正：使用 MAXX + VALUES 黃金組合\n連續下降天數_修正 = MAXX(\n    VALUES(日期表[日期]),       // 在總計行返回所有日期列表\n    [連續下降天數原始]          // 對每個日期迭代計算後聚合\n)",
+                desc: "問題根源：在沒有行上下文 (Row Context) 時，度量值在總計行計算整個期間的最大值，而不是明細行的加總，導致總計與明細對不上。MAXX + VALUES 是解決 Grand Total Bug 的黃金組合。"
+            },
+            {
+                name: "9. SWITCH(TRUE) 多條件品類警戒線",
+                code: "當前品類警戒線 =\nVAR SelectedCategory = SELECTEDVALUE('D產品表'[產品類別])\nRETURN SWITCH(TRUE(),\n    SelectedCategory = \"服飾類\", [服飾類警戒線值],\n    SelectedCategory = \"飾品類\", [飾品類警戒線值],\n    SelectedCategory = \"鞋類\",   [鞋類警戒線值],\n    [通用警戒線值]    // Else 默認值\n)",
+                desc: "應用場景：不同產品類別有不同的行業基準毛利率，需為每個品類設定專屬的警戒閾值，而非使用統一門檻。SWITCH(TRUE()) 類似 IF-ELSEIF 鏈，更易讀。"
+            },
+            {
+                name: "10. SUMMARIZE + FILTER 低毛利銷售篩選",
+                code: "VAR A = SELECTEDVALUE('D產品表'[產品類別])\nVAR X1 = [服裝類毛利率警戒線值]\nVAR AA = SWITCH(TRUE(),\n    A = \"服裝類\",\n    VAR Y = SUMMARIZE('F銷售訂單表',\n        'D產品表'[產品名稱],\n        'F銷售訂單表'[銷售單價])     // 建立虛擬彙總表\n    VAR Z = FILTER(Y,\n        [銷售毛利率] <= X1)          // 篩選低於警戒線的行\n    RETURN CALCULATE([銷售毛利率], Z),\n    BLANK()\n)",
+                desc: "進階版：結合 SUMMARIZE + FILTER 計算低毛利銷售。SUMMARIZE 建立虛擬表，FILTER 對虛擬表進行二次過濾，CALCULATE 將過濾後的表作為新的上下文傳入。"
+            },
+            {
+                name: "11. CONCATENATEX 異常日期追蹤",
+                code: "低毛利銷售日期清單 = CONCATENATEX(\n    CALCULATETABLE(\n        VALUES('F銷售訂單表'[訂單時間]),  // 取出唯一日期值\n        Z                                  // Z = 低毛利銷售的過濾條件表\n    ),\n    [訂單時間],     // 要串接的欄位\n    \", \",           // 分隔符\n    [訂單時間]      // 按日期升序排列\n)\n// 輸出範例：\"2024/11/09, 2024/11/12, 2024/11/15...\"",
+                desc: "當需要識別並列出某個產品低於警戒線銷售的「所有問題日期」時，傳統度量值只能返回單一數值，CONCATENATEX 可將多行文本串接成單一字串。"
+            },
+            {
+                name: "12. 動態標題 SELECTEDVALUE",
+                code: "散點圖標題 = SELECTEDVALUE(\n    'D產品表'[產品名稱],\n    \"全部產品\"     // 無選擇時的預設文字\n) & \" - 銷售單價 vs 銷售數量 vs 毛利率\"",
+                desc: "散點圖等圖表需隨 Slicer 選擇自動更新標題，讓使用者永遠清楚正在分析的對象。"
+            }
+        ];
+
+        // ===== CORE FUNCTIONS =====
+        function init() {
+            DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
+            document.getElementById('lastUpdated').innerText = '最後更新: ' + new Date().toISOString().slice(0, 10);
+            renderDAX();
+            renderAll();
+            setupDragAndDrop();
+        }
+
+        function switchPage(pageId, el) {
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            el.classList.add('active');
+            document.getElementById(pageId).classList.add('active');
+            document.getElementById('currentPageName').innerText = el.innerText.trim();
+            renderAll();
+        }
+
+        // ===== CHART MANAGEMENT =====
+        function clearCharts() {
+            Object.values(charts).forEach(c => { if (c && c.destroy) c.destroy(); });
+            charts = {};
+        }
+
+        function renderAll() {
+            clearCharts();
+            renderOverview();
+            renderScenario();
+            renderSeries();
+            renderBCG();
+            renderGeo();
+            renderCost();
+            renderCustomer();
+            renderPromo();
+        }
+
+        // ===== 1. OVERVIEW =====
+        function renderOverview() {
+            const m = DATA.monthly;
+            const totalRev = m.reduce((a, b) => a + b['銷售收入'], 0);
+            const totalCost = m.reduce((a, b) => a + b['銷售成本'], 0);
+            const profit = totalRev - totalCost;
+            const margin = profit / totalRev;
+
+            const lastYearRev = m.reduce((a, b) => a + (b['去年同期收入'] || 0), 0);
+            const lastYearCost = m.reduce((a, b) => a + (b['去年同期成本'] || b['銷售成本'] * 0.95), 0);
+            const lastYearProfit = lastYearRev - lastYearCost;
+            const lastYearMargin = lastYearProfit / lastYearRev;
+
+            const revGrowth = (totalRev - lastYearRev) / lastYearRev;
+            const costGrowth = (totalCost - lastYearCost) / lastYearCost;
+            const profitGrowth = (profit - lastYearProfit) / lastYearProfit;
+
+            document.getElementById('ov-rev').innerText = UI.fmtMoney(totalRev);
+            document.getElementById('ov-cost').innerText = UI.fmtMoney(totalCost);
+            document.getElementById('ov-profit').innerText = UI.fmtMoney(profit);
+            document.getElementById('ov-margin').innerText = UI.fmtPct(margin);
+
+            const revTrend = document.getElementById('ov-rev-trend');
+            revTrend.className = 'kpi-trend ' + (revGrowth >= 0 ? 'up' : 'down');
+            revTrend.innerText = (revGrowth >= 0 ? '▲ ' : '▼ ') + Math.abs(revGrowth * 100).toFixed(1) + '% YoY';
+
+            const costTrend = document.getElementById('ov-cost-trend');
+            costTrend.className = 'kpi-trend ' + (costGrowth <= 0 ? 'up' : 'down');
+            costTrend.innerText = (costGrowth >= 0 ? '▲ ' : '▼ ') + Math.abs(costGrowth * 100).toFixed(1) + '% YoY';
+
+            const profitTrend = document.getElementById('ov-profit-trend');
+            profitTrend.className = 'kpi-trend ' + (profitGrowth >= 0 ? 'up' : 'down');
+            profitTrend.innerText = (profitGrowth >= 0 ? '▲ ' : '▼ ') + Math.abs(profitGrowth * 100).toFixed(1) + '% YoY';
+
+            // Margin alert
+            const alertDiv = document.getElementById('ov-margin-alert');
+            if (margin < TARGET_MARGIN) {
+                alertDiv.innerHTML = '<span style="color: var(--danger);">低於目標 ' + UI.fmtPct(TARGET_MARGIN) + '</span>';
+            } else {
+                alertDiv.innerHTML = '<span style="color: var(--success);">已達標</span>';
+            }
+
+            // Alert container
+            const alertBox = document.getElementById('alertContainer');
+            let alerts = '';
+            if (margin < TARGET_MARGIN) {
+                alerts += '<div class="alert alert-danger"><strong>預警</strong>：本期平均毛利率 ' + UI.fmtPct(margin) + ' 低於年度目標 ' + UI.fmtPct(TARGET_MARGIN) + '！建議檢視成本結構與定價策略。</div>';
+            } else {
+                alerts += '<div class="alert alert-info">本期表現穩健，毛利率 ' + UI.fmtPct(margin) + ' 已達標。</div>';
+            }
+
+            // Check consecutive drops
+            const margins = m.map(x => (x['銷售收入'] - x['銷售成本']) / x['銷售收入']);
+            let maxDrop = 0, curDrop = 0;
+            for (let i = 1; i < margins.length; i++) {
+                if (margins[i] < margins[i - 1]) { curDrop++; maxDrop = Math.max(maxDrop, curDrop); }
+                else { curDrop = 0; }
+            }
+            if (maxDrop >= 2) {
+                alerts += '<div class="alert alert-warning"><strong>注意</strong>：偵測到最大連續 ' + maxDrop + ' 個月毛利率下降，請留意是否有持續性的成本上升或折扣策略失控。</div>';
+            }
+
+            // Low margin products
+            if (DATA.products && DATA.products.length > 0) {
+                const lowMargin = DATA.products.filter(p => ((p['銷售單價'] - p['單位成本']) / p['銷售單價']) < 0.30);
+                if (lowMargin.length > 0) {
+                    alerts += '<div class="alert alert-warning"><strong>低毛利產品</strong>：' + lowMargin.map(p => p['產品名稱'] + ' (' + UI.fmtPct((p['銷售單價'] - p['單位成本']) / p['銷售單價']) + ')').join('、') + ' 毛利率低於30%，建議優化定價或成本。</div>';
+                }
+            }
+            alertBox.innerHTML = alerts;
+
+            // Waterfall Chart
+            const ctxW = document.getElementById('waterfallChart').getContext('2d');
+            const varCost = totalCost * 0.65;
+            const fixCost = totalCost * 0.35;
+            charts.waterfall = new Chart(ctxW, {
+                type: 'bar',
+                data: {
+                    labels: ['總營收', '變動成本', '固定成本分攤', '最終毛利'],
+                    datasets: [{
+                        data: [totalRev / 1e4, -varCost / 1e4, -fixCost / 1e4, profit / 1e4],
+                        backgroundColor: ['#63b3ed', '#fc8181', '#f6ad55', '#68d391'],
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: {
+                            color: '#e2e8f0',
+                            anchor: 'end',
+                            align: 'top',
+                            formatter: v => (v >= 0 ? '' : '') + Math.abs(v).toFixed(0) + '萬',
+                            font: { weight: 600, size: 11 }
+                        }
+                    },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', callback: v => v + '萬' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                    }
+                },
+                plugins: [ChartDataLabels]
+            });
+
+            // Overview Pie
+            const ctxP = document.getElementById('overviewPieChart').getContext('2d');
+            const cats = [...new Set(DATA.products.map(p => p['類別']))];
+            const catData = cats.map(c => DATA.products.filter(p => p['類別'] === c).reduce((sum, p) => sum + (p['銷售單價'] - p['單位成本']) * p['銷售總量'], 0));
+            charts.overviewPie = new Chart(ctxP, {
+                type: 'doughnut',
+                data: {
+                    labels: cats,
+                    datasets: [{ data: catData, backgroundColor: UI.colors, borderWidth: 0 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, cutout: '65%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 16 } },
+                        datalabels: { display: false }
+                    }
+                }
+            });
+
+            // Product table
+            renderProductTable();
+        }
+
+        function renderProductTable() {
+            const container = document.getElementById('productTableContainer');
+            if (!DATA.products || DATA.products.length === 0) { container.innerHTML = '<p style="color:var(--text-dim);">無產品資料</p>'; return; }
+            let html = '<table><thead><tr><th>產品名稱</th><th>類別</th><th>售價</th><th>成本</th><th>毛利率</th><th>銷量</th><th>毛利額</th><th>BCG</th></tr></thead><tbody>';
+            DATA.products.forEach(p => {
+                const m = (p['銷售單價'] - p['單位成本']) / p['銷售單價'];
+                const profit = (p['銷售單價'] - p['單位成本']) * p['銷售總量'];
+                const mColor = m >= 0.4 ? 'var(--success)' : m >= 0.28 ? 'var(--warning)' : 'var(--danger)';
+                const bcgColor = { '明星': '#63b3ed', '金牛': '#68d391', '問題兒': '#f6ad55', '瘦狗': '#fc8181' }[p['BCG象限']] || '#94a3b8';
+                html += '<tr><td>' + p['產品名稱'] + '</td><td>' + p['類別'] + '</td><td>' + UI.fmtMoney(p['銷售單價']) + '</td><td>' + UI.fmtMoney(p['單位成本']) + '</td><td style="color:' + mColor + ';font-weight:700;">' + UI.fmtPct(m) + '</td><td>' + p['銷售總量'].toLocaleString() + '</td><td>' + UI.fmtMoney(profit) + '</td><td><span style="color:' + bcgColor + ';font-weight:600;">' + p['BCG象限'] + '</span></td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // ===== 2. SCENARIO SIMULATOR =====
+        function runSimulation() {
+            const pAdj = parseInt(document.getElementById('sim-price').value) / 100;
+            const qAdj = parseInt(document.getElementById('sim-qty').value) / 100;
+            const cAdj = parseInt(document.getElementById('sim-cost').value) / 100;
+
+            document.getElementById('sim-price-val').innerText = (pAdj >= 0 ? '+' : '') + (pAdj * 100).toFixed(0) + '%';
+            document.getElementById('sim-qty-val').innerText = (qAdj >= 0 ? '+' : '') + (qAdj * 100).toFixed(0) + '%';
+            document.getElementById('sim-cost-val').innerText = (cAdj >= 0 ? '+' : '') + (cAdj * 100).toFixed(0) + '%';
+
+            const baseRev = DATA.monthly.reduce((a, b) => a + b['銷售收入'], 0);
+            const baseCost = DATA.monthly.reduce((a, b) => a + b['銷售成本'], 0);
+            const baseProfit = baseRev - baseCost;
+            const baseMargin = baseProfit / baseRev;
+
+            const elasticityEffect = -pAdj * PRICE_ELASTICITY;
+            const finalQtyAdj = 1 + qAdj + elasticityEffect;
+
+            const predRev = baseRev * (1 + pAdj) * finalQtyAdj;
+            const predCost = baseCost * (1 + cAdj) * finalQtyAdj;
+            const predProfit = predRev - predCost;
+            const predMargin = predRev > 0 ? predProfit / predRev : 0;
+
+            document.getElementById('sim-res-margin').innerText = UI.fmtPct(predMargin);
+            document.getElementById('sim-res-margin').style.color = predMargin >= TARGET_MARGIN ? 'var(--success)' : predMargin >= 0.25 ? 'var(--warning)' : 'var(--danger)';
+            document.getElementById('sim-res-profit').innerText = UI.fmtMoney(predProfit);
+            document.getElementById('sim-res-profit').style.color = predProfit >= 0 ? 'var(--success)' : 'var(--danger)';
+
+            const marginDelta = predMargin - baseMargin;
+            const profitDelta = predProfit - baseProfit;
+            document.getElementById('sim-margin-delta').innerText = (marginDelta >= 0 ? '+' : '') + (marginDelta * 100).toFixed(1) + ' pp';
+            document.getElementById('sim-margin-delta').style.color = marginDelta >= 0 ? 'var(--success)' : 'var(--danger)';
+            document.getElementById('sim-profit-delta').innerText = (profitDelta >= 0 ? '+' : '') + UI.fmtMoney(profitDelta);
+            document.getElementById('sim-profit-delta').style.color = profitDelta >= 0 ? 'var(--success)' : 'var(--danger)';
+
+            // Update chart
+            if (charts.simSens) charts.simSens.destroy();
+            const ctxS = document.getElementById('simSensitivityChart').getContext('2d');
+            charts.simSens = new Chart(ctxS, {
+                type: 'bar',
+                data: {
+                    labels: ['營收', '成本', '毛利'],
+                    datasets: [
+                        { label: '基準', data: [baseRev / 1e4, baseCost / 1e4, baseProfit / 1e4], backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 4 },
+                        { label: '模擬', data: [predRev / 1e4, predCost / 1e4, predProfit / 1e4], backgroundColor: [predRev > baseRev ? '#63b3ed' : '#fc8181', predCost < baseCost ? '#68d391' : '#f6ad55', predProfit > baseProfit ? '#68d391' : '#fc8181'], borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#94a3b8' } }, datalabels: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', callback: v => v + '萬' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function renderScenario() { runSimulation(); }
+
+        // ===== 3. SERIES =====
+        function renderSeries() {
+            const m = DATA.monthly;
+            const thisMargins = m.map(x => ((x['銷售收入'] - x['銷售成本']) / x['銷售收入']) * 100);
+            const lastMargins = m.map(x => {
+                const rev = x['去年同期收入'] || x['銷售收入'] * 0.9;
+                const cost = x['去年同期成本'] || x['銷售成本'] * 0.95;
+                return ((rev - cost) / rev) * 100;
+            });
+
+            const ctx = document.getElementById('seriesTrendChart').getContext('2d');
+            charts.series = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: m.map(x => x['時間']),
+                    datasets: [
+                        { label: '本期毛利率 (%)', data: thisMargins, borderColor: '#63b3ed', backgroundColor: 'rgba(99,179,237,0.1)', tension: 0.4, fill: true, pointRadius: 4, pointBackgroundColor: '#63b3ed' },
+                        { label: '去年同期毛利率 (%)', data: lastMargins, borderColor: 'rgba(255,255,255,0.3)', borderDash: [5, 5], tension: 0.4, fill: false, pointRadius: 3 },
+                        { label: '目標線 (' + (TARGET_MARGIN * 100) + '%)', data: m.map(() => TARGET_MARGIN * 100), borderColor: 'rgba(252,129,129,0.5)', borderDash: [10, 5], pointRadius: 0, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#94a3b8' } }, datalabels: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', callback: v => v + '%' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                    }
+                }
+            });
+
+            // Revenue & Cost chart
+            const ctx2 = document.getElementById('seriesRevCostChart').getContext('2d');
+            charts.seriesRevCost = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: m.map(x => x['時間']),
+                    datasets: [
+                        { label: '銷售收入', data: m.map(x => x['銷售收入'] / 1e4), backgroundColor: 'rgba(99,179,237,0.6)', borderRadius: 4 },
+                        { label: '銷售成本', data: m.map(x => x['銷售成本'] / 1e4), backgroundColor: 'rgba(252,129,129,0.4)', borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#94a3b8' } }, datalabels: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', callback: v => v + '萬' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        x: { ticks: { color: '#94a3b8', maxRotation: 45 }, grid: { display: false } }
+                    }
+                }
+            });
+
+            // Consecutive drops
+            const dropBox = document.getElementById('consecutiveDropInfo');
+            let maxDrop = 0, curDrop = 0, dropStart = '', dropEnd = '';
+            let tempStart = '';
+            for (let i = 1; i < thisMargins.length; i++) {
+                if (thisMargins[i] < thisMargins[i - 1]) {
+                    if (curDrop === 0) tempStart = m[i - 1]['時間'];
+                    curDrop++;
+                    if (curDrop > maxDrop) { maxDrop = curDrop; dropStart = tempStart; dropEnd = m[i]['時間']; }
+                } else { curDrop = 0; }
+            }
+            let dropHtml = '<div style="margin-bottom: 12px;"><span style="font-size: 14px; color: var(--text-dim);">最大連續下降月數</span><div style="font-size: 48px; font-weight: 800; color: ' + (maxDrop >= 3 ? 'var(--danger)' : maxDrop >= 2 ? 'var(--warning)' : 'var(--success)') + ';">' + maxDrop + ' 個月</div></div>';
+            if (maxDrop >= 2) {
+                dropHtml += '<div class="alert alert-warning">區間: ' + dropStart + ' ~ ' + dropEnd + '<br>建議檢視此期間定價策略或原材料成本變動。</div>';
+            } else {
+                dropHtml += '<div class="alert alert-info">毛利率走勢穩定，無連續下跌警訊。</div>';
+            }
+            dropBox.innerHTML = dropHtml;
+        }
+
+        // ===== 4. BCG =====
+        function renderBCG() {
+            const p = DATA.products;
+            const ctxM = document.getElementById('bcgMatrixChart').getContext('2d');
+            const bcgColors = { '明星': '#63b3ed', '金牛': '#68d391', '問題兒': '#f6ad55', '瘦狗': '#fc8181' };
+
+            charts.bcgMatrix = new Chart(ctxM, {
+                type: 'bubble',
+                data: {
+                    datasets: p.map(item => ({
+                        label: item['產品名稱'],
+                        data: [{ x: item['相對市占率'] * 100, y: item['市場成長率'] * 100, r: Math.sqrt(item['銷售總量']) * 1.2 }],
+                        backgroundColor: (bcgColors[item['BCG象限']] || '#fff') + '99'
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const item = p[ctx.datasetIndex];
+                                    return item['產品名稱'] + ' | 市占率:' + (item['相對市占率'] * 100).toFixed(0) + '% | 成長率:' + (item['市場成長率'] * 100).toFixed(0) + '% | 銷量:' + item['銷售總量'];
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: '相對市占率 (%)', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, min: 0, max: 40, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y: { title: { display: true, text: '市場成長率 (%)', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, min: -5, max: 45, grid: { color: 'rgba(255,255,255,0.05)' } }
+                    }
+                }
+            });
+
+            const ctxD = document.getElementById('bcgDonutChart').getContext('2d');
+            const quadrants = ['明星', '金牛', '問題兒', '瘦狗'];
+            const bcgCounts = quadrants.map(q => p.filter(x => x['BCG象限'] === q).length);
+            charts.bcgDonut = new Chart(ctxD, {
+                type: 'doughnut',
+                data: {
+                    labels: quadrants,
+                    datasets: [{ data: bcgCounts, backgroundColor: ['#63b3ed', '#68d391', '#f6ad55', '#fc8181'], borderWidth: 0 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, cutout: '60%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 16 } },
+                        datalabels: { color: '#fff', font: { weight: 'bold' }, formatter: (v, ctx) => v > 0 ? quadrants[ctx.dataIndex] + '\n' + v + '項' : '' }
+                    }
+                },
+                plugins: [ChartDataLabels]
+            });
+
+            // BCG table
+            const container = document.getElementById('bcgTableContainer');
+            let html = '<table><thead><tr><th>產品</th><th>類別</th><th>毛利率</th><th>市占率</th><th>成長率</th><th>象限</th><th>建議</th></tr></thead><tbody>';
+            p.forEach(item => {
+                const m = (item['銷售單價'] - item['單位成本']) / item['銷售單價'];
+                const advice = { '明星': '持續投資', '金牛': '穩定收割', '問題兒': '評估投入', '瘦狗': '考慮淘汰' }[item['BCG象限']] || '-';
+                html += '<tr><td>' + item['產品名稱'] + '</td><td>' + item['類別'] + '</td><td>' + UI.fmtPct(m) + '</td><td>' + (item['相對市占率'] * 100).toFixed(0) + '%</td><td>' + (item['市場成長率'] * 100).toFixed(0) + '%</td><td style="color:' + (bcgColors[item['BCG象限']] || '#fff') + ';font-weight:600;">' + item['BCG象限'] + '</td><td>' + advice + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // ===== 5. GEO =====
+        function renderGeo() {
+            const regions = DATA.regions || [];
+            const channels = DATA.channels || [];
+
+            // Radar chart
+            const ctxR = document.getElementById('geoRadarChart').getContext('2d');
+            const dims = ['毛利率', '配送效率', '售價溢價', '市場份額', '品牌知名度'];
+            const radarDatasets = regions.map((r, i) => ({
+                label: r['地區名稱'],
+                data: dims.map(d => r[d] || 0),
+                borderColor: UI.colors[i % UI.colors.length],
+                backgroundColor: UI.colors[i % UI.colors.length] + '22',
+                pointBackgroundColor: UI.colors[i % UI.colors.length]
+            }));
+            charts.geoRadar = new Chart(ctxR, {
+                type: 'radar',
+                data: { labels: dims, datasets: radarDatasets },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#94a3b8' } }, datalabels: { display: false } },
+                    scales: { r: { angleLines: { color: 'rgba(255,255,255,0.1)' }, grid: { color: 'rgba(255,255,255,0.1)' }, pointLabels: { color: '#94a3b8' }, ticks: { display: false } } }
+                }
+            });
+
+            // Channel Efficiency chart
+            const ctxC = document.getElementById('channelEfficiencyChart').getContext('2d');
+            if (channels.length > 0) {
+                const chRev = channels.map(c => c['銷售額'] / 1e4);
+                const chProfit = channels.map(c => (c['銷售額'] - c['成本']) / 1e4);
+                const chMargin = channels.map(c => ((c['銷售額'] - c['成本']) / c['銷售額']) * 100);
+                charts.channelEff = new Chart(ctxC, {
+                    data: {
+                        labels: channels.map(c => c['渠道名稱']),
+                        datasets: [
+                            { type: 'bar', label: '銷售額 (萬)', data: chRev, backgroundColor: 'rgba(99,179,237,0.5)', borderRadius: 4, yAxisID: 'y' },
+                            { type: 'bar', label: '毛利額 (萬)', data: chProfit, backgroundColor: 'rgba(104,211,145,0.5)', borderRadius: 4, yAxisID: 'y' },
+                            { type: 'line', label: '毛利率 (%)', data: chMargin, borderColor: '#f6ad55', backgroundColor: '#f6ad55', pointRadius: 5, yAxisID: 'y2', fill: false }
+                        ]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { labels: { color: '#94a3b8' } }, datalabels: { display: false } },
+                        scales: {
+                            y: { ticks: { color: '#94a3b8', callback: v => v + '萬' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                            y2: { position: 'right', max: 50, ticks: { color: '#f6ad55', callback: v => v + '%' }, grid: { display: false } },
+                            x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                        }
+                    }
+                });
+            } else {
+                charts.channelEff = new Chart(ctxC, { type: 'bar', data: { labels: ['無渠道資料'], datasets: [{ data: [0] }] }, options: { responsive: true, maintainAspectRatio: false } });
+            }
+
+            // Geo table
+            const container = document.getElementById('geoTableContainer');
+            let html = '<table><thead><tr><th>地區</th>';
+            dims.forEach(d => { html += '<th>' + d + '</th>'; });
+            html += '</tr></thead><tbody>';
+            regions.forEach(r => {
+                html += '<tr><td style="font-weight:600;">' + r['地區名稱'] + '</td>';
+                dims.forEach(d => {
+                    const v = r[d] || 0;
+                    const color = v >= 80 ? 'var(--success)' : v >= 60 ? 'var(--warning)' : 'var(--danger)';
+                    html += '<td style="color:' + color + ';">' + v + '</td>';
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // ===== 6. COST =====
+        function renderCost() {
+            const c = DATA.costs;
+
+            // Treemap
+            const area = document.getElementById('costTreemapArea');
+            const total = c.reduce((a, b) => a + b['金額'], 0);
+            const sorted = [...c].sort((a, b) => b['金額'] - a['金額']);
+            let tmHtml = '<div class="treemap-container">';
+            sorted.forEach((item, i) => {
+                const pct = item['金額'] / total;
+                const w = Math.max(pct * 100, 15);
+                const h = Math.max(pct * 380, 60);
+                const color = UI.treemapColors[i % UI.treemapColors.length];
+                tmHtml += '<div class="treemap-block" style="width: calc(' + w + '% - 8px); height: ' + Math.min(h, 180) + 'px; background: ' + color + ';" title="' + item['成本大類'] + ' > ' + item['成本小類'] + ': NT$' + item['金額'].toLocaleString() + ' (' + (pct * 100).toFixed(1) + '%)">';
+                tmHtml += '<div class="tm-label">' + item['成本小類'] + '</div>';
+                tmHtml += '<div class="tm-value">' + UI.fmtMoney(item['金額']) + ' (' + (pct * 100).toFixed(1) + '%)</div>';
+                tmHtml += '</div>';
+            });
+            tmHtml += '</div>';
+            area.innerHTML = tmHtml;
+
+            // Pareto Chart
+            const ctx = document.getElementById('paretoChartV2').getContext('2d');
+            let cum = 0;
+            const paretoData = sorted.map(x => { cum += x['金額']; return (cum / total) * 100; });
+            charts.pareto = new Chart(ctx, {
+                data: {
+                    labels: sorted.map(x => x['成本小類']),
+                    datasets: [
+                        { type: 'bar', label: '成本金額 (萬)', data: sorted.map(x => x['金額'] / 1e4), backgroundColor: UI.colors.slice(0, sorted.length), borderRadius: 6, yAxisID: 'y' },
+                        { type: 'line', label: '累積佔比 (%)', data: paretoData, borderColor: '#f6ad55', pointBackgroundColor: '#f6ad55', yAxisID: 'y2', fill: false, tension: 0.3 }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#94a3b8' } }, datalabels: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#94a3b8', callback: v => v + '萬' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y2: { position: 'right', max: 100, ticks: { color: '#f6ad55', callback: v => v + '%' }, grid: { display: false } },
+                        x: { ticks: { color: '#94a3b8', maxRotation: 45 }, grid: { display: false } }
+                    }
+                }
+            });
+
+            // Cost table
+            const container = document.getElementById('costTableContainer');
+            let html = '<table><thead><tr><th>成本大類</th><th>成本小類</th><th>金額</th><th>佔比</th><th>累積佔比</th></tr></thead><tbody>';
+            let cumPct = 0;
+            sorted.forEach(item => {
+                const pct = item['金額'] / total;
+                cumPct += pct;
+                html += '<tr><td>' + item['成本大類'] + '</td><td>' + item['成本小類'] + '</td><td>' + UI.fmtMoney(item['金額']) + '</td><td>' + UI.fmtPct(pct) + '</td><td>' + UI.fmtPct(cumPct) + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // ===== 7. CUSTOMER =====
+        function renderCustomer() {
+            const cust = DATA.customers || [];
+            if (cust.length === 0) return;
+
+            // LTV vs Margin scatter
+            const ctxV = document.getElementById('customerValueChart').getContext('2d');
+            const tierColors = { '鑽石': '#b794f4', '金牌': '#f6ad55', '銀牌': '#63b3ed', '銅牌': '#76e4f7', '一般': '#94a3b8' };
+            charts.customerValue = new Chart(ctxV, {
+                type: 'bubble',
+                data: {
+                    datasets: cust.map(c => ({
+                        label: c['客戶名稱'],
+                        data: [{ x: c['LTV總額'] / 1e4, y: c['毛利貢獻率'] * 100, r: Math.sqrt(c['購買頻率'] || 10) * 4 }],
+                        backgroundColor: (tierColors[c['客戶等級']] || '#94a3b8') + 'AA'
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const c = cust[ctx.datasetIndex];
+                                    return c['客戶名稱'] + ' | LTV:' + UI.fmtMoney(c['LTV總額']) + ' | 毛利貢獻:' + UI.fmtPct(c['毛利貢獻率']) + ' | 頻率:' + (c['購買頻率'] || '-') + '次/年';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: 'LTV 總額 (萬)', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                        y: { title: { display: true, text: '毛利貢獻率 (%)', color: '#94a3b8' }, ticks: { color: '#94a3b8', callback: v => v + '%' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                    }
+                }
+            });
+
+            // Customer tier pie
+            const ctxT = document.getElementById('customerTierChart').getContext('2d');
+            const tiers = [...new Set(cust.map(c => c['客戶等級'] || '一般'))];
+            const tierData = tiers.map(t => cust.filter(c => (c['客戶等級'] || '一般') === t).reduce((s, c) => s + c['LTV總額'], 0));
+            charts.customerTier = new Chart(ctxT, {
+                type: 'doughnut',
+                data: {
+                    labels: tiers,
+                    datasets: [{ data: tierData, backgroundColor: tiers.map(t => tierColors[t] || '#94a3b8'), borderWidth: 0 }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, cutout: '60%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#94a3b8', padding: 16 } },
+                        datalabels: { display: false }
+                    }
+                }
+            });
+
+            // Customer table
+            const container = document.getElementById('customerTableContainer');
+            let html = '<table><thead><tr><th>客戶名稱</th><th>LTV 總額</th><th>毛利貢獻率</th><th>購買頻率</th><th>客戶等級</th></tr></thead><tbody>';
+            cust.sort((a, b) => b['LTV總額'] - a['LTV總額']).forEach(c => {
+                const tc = tierColors[c['客戶等級']] || '#94a3b8';
+                html += '<tr><td>' + c['客戶名稱'] + '</td><td>' + UI.fmtMoney(c['LTV總額']) + '</td><td>' + UI.fmtPct(c['毛利貢獻率']) + '</td><td>' + (c['購買頻率'] || '-') + ' 次/年</td><td style="color:' + tc + ';font-weight:600;">' + (c['客戶等級'] || '一般') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // ===== 8. PROMO =====
+        function renderPromo() {
+            const promo = DATA.promotions || [];
+            if (promo.length === 0) return;
+
+            // Scatter: discount vs sales growth
+            const ctxS = document.getElementById('promoScatterChart').getContext('2d');
+            const typeColors = { '季節促銷': '#63b3ed', '節慶促銷': '#fc8181', '會員促銷': '#68d391', '清倉促銷': '#f6ad55', '品牌活動': '#b794f4', '捆綁促銷': '#f687b3', '拉新活動': '#76e4f7' };
+            charts.promoScatter = new Chart(ctxS, {
+                type: 'scatter',
+                data: {
+                    datasets: promo.map(p => ({
+                        label: p['活動名稱'],
+                        data: [{ x: p['折扣率'] * 100, y: p['銷量增幅'] * 100 }],
+                        backgroundColor: (typeColors[p['活動類型']] || '#94a3b8') + 'CC',
+                        pointRadius: 8,
+                        pointHoverRadius: 12
+                    }))
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => {
+                                    const p = promo[ctx.datasetIndex];
+                                    return p['活動名稱'] + ' | 折扣:' + (p['折扣率'] * 100).toFixed(0) + '% | 銷量增:' + (p['銷量增幅'] * 100).toFixed(0) + '% | 毛利影響:' + (p['毛利變動'] >= 0 ? '+' : '') + (p['毛利變動'] * 100).toFixed(1) + '%';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: '折扣率 (%)', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' }, min: 0 },
+                        y: { title: { display: true, text: '銷量增幅 (%)', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' }, min: 0 }
+                    }
+                }
+            });
+
+            // ROI bar chart
+            const ctxR = document.getElementById('promoROIChart').getContext('2d');
+            const roi = promo.map(p => {
+                const salesGain = p['銷量增幅'];
+                const marginLoss = Math.abs(p['毛利變動']);
+                return marginLoss > 0 ? salesGain / marginLoss : salesGain * 10;
+            });
+            charts.promoROI = new Chart(ctxR, {
+                type: 'bar',
+                data: {
+                    labels: promo.map(p => p['活動名稱']),
+                    datasets: [
+                        { label: '銷量增幅/毛利損失 (ROI)', data: roi, backgroundColor: roi.map(r => r >= 5 ? '#68d391' : r >= 3 ? '#f6ad55' : '#fc8181'), borderRadius: 6 }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false },
+                        datalabels: { color: '#e2e8f0', anchor: 'end', align: 'right', formatter: v => v.toFixed(1) + 'x', font: { weight: 600, size: 11 } }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: 'ROI 倍數', color: '#94a3b8' } },
+                        y: { ticks: { color: '#94a3b8', font: { size: 11 } }, grid: { display: false } }
+                    }
+                },
+                plugins: [ChartDataLabels]
+            });
+
+            // Promo table
+            const container = document.getElementById('promoTableContainer');
+            let html = '<table><thead><tr><th>活動名稱</th><th>類型</th><th>折扣率</th><th>銷量增幅</th><th>毛利變動</th><th>ROI</th><th>評價</th></tr></thead><tbody>';
+            promo.forEach((p, i) => {
+                const r = roi[i];
+                const rating = r >= 5 ? '優秀' : r >= 3 ? '良好' : r >= 1.5 ? '普通' : '不佳';
+                const rColor = r >= 5 ? 'var(--success)' : r >= 3 ? 'var(--accent)' : r >= 1.5 ? 'var(--warning)' : 'var(--danger)';
+                html += '<tr><td>' + p['活動名稱'] + '</td><td>' + (p['活動類型'] || '-') + '</td><td>' + (p['折扣率'] * 100).toFixed(0) + '%</td><td style="color:var(--success);">+' + (p['銷量增幅'] * 100).toFixed(0) + '%</td><td style="color:' + (p['毛利變動'] >= 0 ? 'var(--success)' : 'var(--danger)') + ';">' + (p['毛利變動'] >= 0 ? '+' : '') + (p['毛利變動'] * 100).toFixed(1) + '%</td><td>' + r.toFixed(1) + 'x</td><td style="color:' + rColor + ';font-weight:600;">' + rating + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        // ===== 9. DAX KNOWLEDGE =====
+        function renderDAX() {
+            const box = document.getElementById('daxKnowledgeBox');
+            box.innerHTML = DAX_KNOWLEDGE.map(item => {
+                return '<div class="dax-item"><div class="dax-head" onclick="this.nextElementSibling.classList.toggle(\'open\')"><span>' + item.name + '</span><span style="transition:transform 0.2s;">&#x25BC;</span></div><div class="dax-body"><p style="font-size:13px;color:var(--text-dim);margin-top:10px;line-height:1.8;white-space:pre-wrap;">' + item.desc + '</p><pre>' + item.code + '</pre></div></div>';
+            }).join('');
+        }
+
+        // ===== FILE HANDLING =====
+        function handleFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            processFile(file);
+            e.target.value = '';
+        }
+
+        function processFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = e.target.result;
+                    const workbook = XLSX.read(data, { type: 'binary' });
+                    const sheets = {
+                        '月度數據': 'monthly',
+                        '產品數據': 'products',
+                        '成本數據': 'costs',
+                        '客戶數據': 'customers',
+                        '地區數據': 'regions',
+                        '渠道數據': 'channels',
+                        '促銷數據': 'promotions'
+                    };
+                    let imported = {};
+                    let importedNames = [];
+                    workbook.SheetNames.forEach(name => {
+                        if (sheets[name]) {
+                            imported[sheets[name]] = XLSX.utils.sheet_to_json(workbook.Sheets[name]);
+                            importedNames.push(name);
+                        }
+                    });
+
+                    if (Object.keys(imported).length > 0) {
+                        Object.assign(DATA, imported);
+                        document.getElementById('lastUpdated').innerText = '最後更新: ' + new Date().toISOString().slice(0, 10) + ' (已匯入)';
+                        alert('成功匯入 ' + Object.keys(imported).length + ' 個工作表：\n' + importedNames.join('、'));
+                        renderAll();
+                    } else {
+                        alert('找不到符合規格的工作表名稱。\n\n請確認 Excel 中包含以下工作表：\n' + Object.keys(sheets).join('、') + '\n\n可點選「匯入格式說明」查看詳細欄位要求。');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('檔案解析錯誤：' + err.message + '\n\n請確認檔案為有效的 .xlsx/.xls/.csv 格式。');
+                }
+            };
+            reader.readAsBinaryString(file);
+        }
+
+        function setupDragAndDrop() {
+            const dz = document.getElementById('dropZone');
+            let dragCounter = 0;
+            window.addEventListener('dragenter', e => { e.preventDefault(); dragCounter++; dz.classList.add('active'); });
+            window.addEventListener('dragleave', e => { dragCounter--; if (dragCounter <= 0) { dz.classList.remove('active'); dragCounter = 0; } });
+            window.addEventListener('dragover', e => { e.preventDefault(); });
+            dz.addEventListener('drop', e => {
+                e.preventDefault();
+                dz.classList.remove('active');
+                dragCounter = 0;
+                if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+            });
+        }
+
+        function resetData() {
+            if (confirm('確定要清除自訂數據並重置為範例資料嗎？')) {
+                DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
+                document.getElementById('lastUpdated').innerText = '最後更新: ' + new Date().toISOString().slice(0, 10) + ' (範例)';
+                renderAll();
+            }
+        }
+
+        function exportData() {
+            const blob = new Blob([JSON.stringify(DATA, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Profit_Dashboard_Export_' + new Date().toISOString().slice(0, 10) + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function downloadSampleExcel() {
+            const wb = XLSX.utils.book_new();
+
+            const ws1 = XLSX.utils.json_to_sheet(DEFAULT_DATA.monthly);
+            XLSX.utils.book_append_sheet(wb, ws1, '月度數據');
+
+            const ws2 = XLSX.utils.json_to_sheet(DEFAULT_DATA.products);
+            XLSX.utils.book_append_sheet(wb, ws2, '產品數據');
+
+            const ws3 = XLSX.utils.json_to_sheet(DEFAULT_DATA.costs);
+            XLSX.utils.book_append_sheet(wb, ws3, '成本數據');
+
+            const ws4 = XLSX.utils.json_to_sheet(DEFAULT_DATA.customers);
+            XLSX.utils.book_append_sheet(wb, ws4, '客戶數據');
+
+            const ws5 = XLSX.utils.json_to_sheet(DEFAULT_DATA.regions);
+            XLSX.utils.book_append_sheet(wb, ws5, '地區數據');
+
+            const ws6 = XLSX.utils.json_to_sheet(DEFAULT_DATA.channels);
+            XLSX.utils.book_append_sheet(wb, ws6, '渠道數據');
+
+            const ws7 = XLSX.utils.json_to_sheet(DEFAULT_DATA.promotions);
+            XLSX.utils.book_append_sheet(wb, ws7, '促銷數據');
+
+            XLSX.writeFile(wb, 'Gross_Profit_OS_範例資料.xlsx');
+        }
+
+        // START
+        window.onload = init;
+    </script>
+</body>
+
+</html>

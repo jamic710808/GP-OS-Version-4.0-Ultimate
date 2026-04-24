@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>毛利分析互動式資訊看板 | Gross Profit OS v3.0</title>
+    <meta name="description" content="V3.0 企業級毛利率分析看板，新增瀑布圖、最佳定價分析、預警中心、熱力圖">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --bg-base: #060912;
+            --sidebar-bg: #0d111c;
+            --card-bg: rgba(255,255,255,0.04);
+            --card-hover: rgba(255,255,255,0.07);
+            --border: rgba(255,255,255,0.1);
+            --accent: #63b3ed;
+            --accent-glow: rgba(99,179,237,0.3);
+            --success: #68d391;
+            --warning: #f6ad55;
+            --danger: #fc8181;
+            --purple: #b794f4;
+            --teal: #4fd1c5;
+            --pink: #f687b3;
+            --text-main: #e2e8f0;
+            --text-dim: #94a3b8;
+            --sidebar-width: 260px;
+            --header-height: 70px;
+            --glass: blur(12px) saturate(180%);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter','Noto Sans TC',sans-serif; background: var(--bg-base); color: var(--text-main); display: flex; min-height: 100vh; overflow-x: hidden; }
+        body::before { content:''; position:fixed; top:0; left:0; width:100%; height:100%; background: radial-gradient(circle at 10% 10%, rgba(99,179,237,0.05) 0%, transparent 40%), radial-gradient(circle at 90% 90%, rgba(104,211,145,0.04) 0%, transparent 40%); z-index:-1; pointer-events:none; }
+        .sidebar { width:var(--sidebar-width); background:var(--sidebar-bg); border-right:1px solid var(--border); display:flex; flex-direction:column; position:fixed; height:100vh; z-index:1000; transition:transform 0.3s ease; overflow-y:auto; }
+        .sidebar-header { padding:20px 24px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; flex-shrink:0; }
+        .sidebar-logo { width:32px; height:32px; background:linear-gradient(135deg,var(--accent),var(--purple)); border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; font-size:14px; }
+        .sidebar-brand { font-size:15px; font-weight:700; letter-spacing:0.5px; }
+        .sidebar-v { font-size:10px; color:var(--accent); opacity:0.8; }
+        .nav-section { padding:8px 12px 4px; font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; font-weight:600; }
+        .nav-list { padding:8px 12px; flex:1; }
+        .nav-item { padding:10px 14px; border-radius:10px; margin-bottom:3px; cursor:pointer; display:flex; align-items:center; gap:10px; color:var(--text-dim); font-size:13px; font-weight:500; transition:all 0.2s cubic-bezier(0.4,0,0.2,1); }
+        .nav-item:hover { background:var(--card-bg); color:var(--text-main); }
+        .nav-item.active { background:var(--accent); color:#060912; box-shadow:0 4px 12px var(--accent-glow); }
+        .nav-icon { font-size:16px; width:20px; text-align:center; }
+        .nav-badge { margin-left:auto; background:var(--danger); color:#fff; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:700; }
+        .main-wrapper { margin-left:var(--sidebar-width); flex:1; display:flex; flex-direction:column; }
+        .header { height:var(--header-height); padding:0 28px; display:flex; align-items:center; justify-content:space-between; background:rgba(6,9,18,0.6); backdrop-filter:var(--glass); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:900; }
+        .header-actions { display:flex; align-items:center; gap:10px; }
+        .btn { padding:7px 14px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; transition:all 0.2s; display:inline-flex; align-items:center; gap:6px; border:1px solid transparent; font-family:inherit; }
+        .btn-primary { background:var(--accent); color:#060912; }
+        .btn-primary:hover { background:#90ccf4; transform:translateY(-1px); }
+        .btn-outline { background:transparent; border:1px solid var(--border); color:var(--text-main); }
+        .btn-outline:hover { background:var(--card-bg); }
+        .btn-success { background:rgba(104,211,145,0.15); border:1px solid var(--success); color:var(--success); }
+        .btn-danger { background:rgba(252,129,129,0.15); border:1px solid var(--danger); color:var(--danger); }
+        .btn-warning { background:rgba(246,173,85,0.15); border:1px solid var(--warning); color:var(--warning); }
+        .content { padding:28px 32px; flex:1; overflow-y:auto; }
+        .page { display:none; }
+        .page.active { display:block; }
+        .page-title { font-size:22px; font-weight:700; margin-bottom:6px; }
+        .page-subtitle { font-size:13px; color:var(--text-dim); margin-bottom:24px; }
+        .grid-cols-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+        .grid-cols-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+        .grid-cols-2 { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; }
+        .card { background:var(--card-bg); border:1px solid var(--border); border-radius:14px; padding:20px; transition:all 0.2s; }
+        .card:hover { background:var(--card-hover); border-color:rgba(255,255,255,0.15); }
+        .card-title { font-size:12px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px; display:flex; align-items:center; gap:6px; }
+        .kpi-value { font-size:28px; font-weight:700; line-height:1.1; }
+        .kpi-unit { font-size:14px; font-weight:400; color:var(--text-dim); margin-left:4px; }
+        .kpi-trend { font-size:12px; margin-top:6px; display:flex; align-items:center; gap:4px; }
+        .trend-up { color:var(--success); }
+        .trend-down { color:var(--danger); }
+        .sparkline-container { height:40px; margin-top:8px; }
+        .chart-card { background:var(--card-bg); border:1px solid var(--border); border-radius:14px; padding:20px; }
+        .chart-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+        .chart-title { font-size:14px; font-weight:600; }
+        .chart-subtitle { font-size:11px; color:var(--text-dim); margin-top:2px; }
+        .chart-wrap { position:relative; }
+        canvas { max-width:100%; }
+        .section-title { font-size:16px; font-weight:700; margin:28px 0 16px; display:flex; align-items:center; gap:8px; }
+        .section-title::after { content:''; flex:1; height:1px; background:var(--border); }
+        table { width:100%; border-collapse:collapse; font-size:13px; }
+        th { padding:10px 14px; text-align:left; font-size:11px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border); }
+        td { padding:10px 14px; border-bottom:1px solid rgba(255,255,255,0.04); }
+        tr:hover td { background:var(--card-hover); }
+        .badge { display:inline-flex; align-items:center; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:600; }
+        .badge-success { background:rgba(104,211,145,0.15); color:var(--success); }
+        .badge-warning { background:rgba(246,173,85,0.15); color:var(--warning); }
+        .badge-danger { background:rgba(252,129,129,0.15); color:var(--danger); }
+        .badge-info { background:rgba(99,179,237,0.15); color:var(--accent); }
+        .badge-purple { background:rgba(183,148,244,0.15); color:var(--purple); }
+        .alert-card { border-radius:12px; padding:16px 20px; display:flex; align-items:flex-start; gap:14px; margin-bottom:12px; }
+        .alert-danger { background:rgba(252,129,129,0.08); border:1px solid rgba(252,129,129,0.3); }
+        .alert-warning { background:rgba(246,173,85,0.08); border:1px solid rgba(246,173,85,0.3); }
+        .alert-success { background:rgba(104,211,145,0.08); border:1px solid rgba(104,211,145,0.3); }
+        .alert-icon { font-size:20px; flex-shrink:0; }
+        .alert-title { font-size:13px; font-weight:700; margin-bottom:4px; }
+        .alert-body { font-size:12px; color:var(--text-dim); }
+        .dax-card { background:var(--card-bg); border:1px solid var(--border); border-radius:12px; margin-bottom:16px; overflow:hidden; }
+        .dax-header { padding:14px 18px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; transition:background 0.2s; }
+        .dax-header:hover { background:var(--card-hover); }
+        .dax-title { font-size:13px; font-weight:600; }
+        .dax-tag { font-size:10px; padding:2px 8px; border-radius:6px; font-weight:600; }
+        .dax-body { padding:0 18px 16px; display:none; }
+        .dax-body.open { display:block; }
+        .dax-desc { font-size:12px; color:var(--text-dim); margin-bottom:10px; line-height:1.6; }
+        .code-block { background:#0a0f1e; border:1px solid var(--border); border-radius:8px; padding:14px; font-family:'JetBrains Mono',monospace; font-size:12px; color:#a8d8ea; overflow-x:auto; white-space:pre; line-height:1.6; }
+        .code-comment { color:#4a5568; }
+        .code-keyword { color:#b794f4; }
+        .code-func { color:#63b3ed; }
+        .code-string { color:#68d391; }
+        .sim-slider { width:100%; -webkit-appearance:none; height:4px; border-radius:2px; background:var(--border); outline:none; }
+        .sim-slider::-webkit-slider-thumb { -webkit-appearance:none; width:16px; height:16px; border-radius:50%; background:var(--accent); cursor:pointer; }
+        .sim-label { display:flex; justify-content:space-between; font-size:12px; color:var(--text-dim); margin-bottom:6px; }
+        .sim-value { font-size:18px; font-weight:700; color:var(--accent); }
+        .heatmap-grid { display:grid; gap:3px; }
+        .heatmap-cell { border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; cursor:pointer; transition:transform 0.1s; }
+        .heatmap-cell:hover { transform:scale(1.1); z-index:10; }
+        .waterfall-bar { display:flex; flex-direction:column; align-items:center; gap:4px; }
+        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); z-index:2000; display:none; align-items:center; justify-content:center; }
+        .modal-overlay.active { display:flex; }
+        .modal-box { background:#0d111c; border:1px solid var(--border); border-radius:16px; padding:28px; max-width:560px; width:90%; max-height:80vh; overflow-y:auto; }
+        .modal-box h3 { font-size:16px; font-weight:700; margin-bottom:16px; }
+        .modal-box ul { padding-left:20px; }
+        .modal-box li { font-size:13px; color:var(--text-dim); margin-bottom:8px; line-height:1.5; }
+        .modal-box li strong { color:var(--text-main); }
+        #dropZone { position:fixed; inset:0; background:rgba(99,179,237,0.15); border:3px dashed var(--accent); z-index:3000; display:none; align-items:center; justify-content:center; }
+        #dropZone.active { display:flex; }
+        .drop-box { font-size:20px; font-weight:700; color:var(--accent); text-align:center; }
+        input[type=file] { display:none; }
+        .tabs { display:flex; gap:4px; margin-bottom:20px; background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:4px; }
+        .tab { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; color:var(--text-dim); transition:all 0.2s; }
+        .tab.active { background:var(--accent); color:#060912; font-weight:700; }
+        .tab-content { display:none; }
+        .tab-content.active { display:block; }
+        .progress-bar { height:6px; background:var(--border); border-radius:3px; overflow:hidden; margin-top:6px; }
+        .progress-fill { height:100%; border-radius:3px; transition:width 0.5s ease; }
+        .tooltip-trigger { position:relative; cursor:help; }
+        .tooltip-trigger:hover .tooltip-text { display:block; }
+        .tooltip-text { display:none; position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%); background:#1a2035; border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:11px; color:var(--text-main); white-space:nowrap; z-index:100; }
+        @media print { .sidebar,.header,.header-actions { display:none!important; } .main-wrapper { margin-left:0!important; } .page { display:block!important; page-break-after:always; } }
+        @media (max-width:1200px) { .grid-cols-4 { grid-template-columns:repeat(2,1fr); } }
+        @media (max-width:768px) { .sidebar { transform:translateX(-100%); } .main-wrapper { margin-left:0; } .grid-cols-3,.grid-cols-2 { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+
+<!-- DROP ZONE -->
+<div id="dropZone"><div class="drop-box">📂 拖放 Excel / CSV / JSON 檔案至此處匯入</div></div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="templateModal">
+    <div class="modal-box">
+        <h3>📋 V3.0 資料格式說明</h3>
+        <p style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">Excel 檔案需包含以下工作表，欄位名稱須完全一致：</p>
+        <ul>
+            <li><strong>月度數據</strong>：時間, 銷售收入, 銷售成本, 去年同期收入, 去年同期成本, 目標收入</li>
+            <li><strong>產品數據</strong>：產品名稱, 類別, 銷售單價, 單位成本, 銷售總量, 相對市占率, 市場成長率, BCG象限</li>
+            <li><strong>成本數據</strong>：成本大類, 成本小類, 金額, 去年金額</li>
+            <li><strong>客戶數據</strong>：客戶名稱, LTV總額, 毛利貢獻率, 購買頻率, 客戶等級</li>
+            <li><strong>地區數據</strong>：地區名稱, 毛利率, 配送效率, 售價溢價, 市場份額, 品牌知名度</li>
+            <li><strong>渠道數據</strong>：渠道名稱, 銷售額, 成本, 渠道類型</li>
+            <li><strong>促銷數據</strong>：活動名稱, 折扣率, 銷量增幅, 毛利變動, 活動類型</li>
+            <li><strong>供應商數據</strong>：供應商名稱, 採購金額, 採購數量, 單位成本, 品類, 付款條件</li>
+            <li><strong>目標設定</strong>：指標名稱, 目標值, 警戒值, 單位</li>
+        </ul>
+        <div style="display:flex;gap:10px;margin-top:20px;">
+            <button class="btn btn-primary" onclick="downloadSampleExcel()">⬇ 下載範例 Excel</button>
+            <button class="btn btn-outline" onclick="closeModal('templateModal')">關閉</button>
+        </div>
+    </div>
+</div>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-logo">M</div>
+        <div>
+            <div class="sidebar-brand">Gross Profit OS</div>
+            <div class="sidebar-v">Version 3.0 Enterprise</div>
+        </div>
+    </div>
+    <div class="nav-list">
+        <div class="nav-section">核心分析</div>
+        <div class="nav-item active" onclick="switchPage('p-overview',this)"><span class="nav-icon">📊</span><span>全局分析總覽</span></div>
+        <div class="nav-item" onclick="switchPage('p-alert',this)"><span class="nav-icon">🚨</span><span>預警中心</span><span class="nav-badge" id="alertBadge">0</span></div>
+        <div class="nav-item" onclick="switchPage('p-waterfall',this)"><span class="nav-icon">🌊</span><span>毛利瀑布分解</span></div>
+        <div class="nav-item" onclick="switchPage('p-scenario',this)"><span class="nav-icon">⚙️</span><span>利潤情境模擬</span></div>
+        <div class="nav-section">維度分析</div>
+        <div class="nav-item" onclick="switchPage('p-series',this)"><span class="nav-icon">📈</span><span>時間序列趨勢</span></div>
+        <div class="nav-item" onclick="switchPage('p-bcg',this)"><span class="nav-icon">📦</span><span>產品組合(BCG)</span></div>
+        <div class="nav-item" onclick="switchPage('p-pricing',this)"><span class="nav-icon">🎯</span><span>最佳定價分析</span></div>
+        <div class="nav-item" onclick="switchPage('p-geo',this)"><span class="nav-icon">🌍</span><span>地域渠道分析</span></div>
+        <div class="nav-item" onclick="switchPage('p-heatmap',this)"><span class="nav-icon">🔥</span><span>地區熱力圖</span></div>
+        <div class="nav-item" onclick="switchPage('p-cost',this)"><span class="nav-icon">💰</span><span>精細成本拆解</span></div>
+        <div class="nav-item" onclick="switchPage('p-customer',this)"><span class="nav-icon">👥</span><span>客戶價值分析</span></div>
+        <div class="nav-item" onclick="switchPage('p-promo',this)"><span class="nav-icon">🎯</span><span>折扣促銷評估</span></div>
+        <div class="nav-item" onclick="switchPage('p-supplier',this)"><span class="nav-icon">🏭</span><span>供應商分析</span></div>
+        <div class="nav-section">知識工具</div>
+        <div class="nav-item" onclick="switchPage('p-dax',this)"><span class="nav-icon">📖</span><span>DAX 知識庫</span></div>
+    </div>
+    <div style="padding:16px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-outline" style="width:100%;justify-content:center;" onclick="resetData()">↺ 重置範例資料</button>
+        <button class="btn btn-success" style="width:100%;justify-content:center;" onclick="openModal('templateModal')">❓ 匯入格式說明</button>
+        <button class="btn btn-warning" style="width:100%;justify-content:center;" onclick="window.print()">🖨 列印 / PDF</button>
+    </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main-wrapper">
+    <header class="header">
+        <div id="breadcrumb" style="font-size:13px;color:var(--text-dim);">分析單元 / <span style="color:var(--text-main);font-weight:600;" id="currentPageName">全局分析總覽</span></div>
+        <div class="header-actions">
+            <div id="lastUpdated" style="font-size:11px;color:var(--text-dim);"></div>
+            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">📂 匯入數據</button>
+            <button class="btn btn-outline" onclick="downloadSampleExcel()">⬇ 範例Excel</button>
+            <button class="btn btn-outline" onclick="exportData('xlsx')">📤 匯出Excel</button>
+            <button class="btn btn-outline" onclick="exportData('json')">{ } JSON</button>
+        </div>
+    </header>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv,.json" onchange="handleFile(event)">
+
+    <main class="content">
+
+        <!-- PAGE: OVERVIEW -->
+        <div class="page active" id="p-overview">
+            <div class="page-title">📊 全局分析總覽</div>
+            <div class="page-subtitle">企業毛利健康度一覽 · 即時 KPI 監控 · YoY 對比</div>
+            <div class="grid-cols-4" style="margin-bottom:24px;" id="kpiCards"></div>
+            <div class="grid-cols-2" style="margin-bottom:24px;">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">月度毛利率趨勢</div><div class="chart-subtitle">含目標線與去年同期</div></div></div>
+                    <div class="chart-wrap"><canvas id="overviewTrendChart" height="200"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">產品毛利率排行</div><div class="chart-subtitle">各產品毛利率對比</div></div></div>
+                    <div class="chart-wrap"><canvas id="overviewProductChart" height="200"></canvas></div>
+                </div>
+            </div>
+            <div class="grid-cols-3">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">收入 vs 成本</div><div class="chart-subtitle">月度對比</div></div></div>
+                    <div class="chart-wrap"><canvas id="overviewRevCostChart" height="180"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">渠道毛利貢獻</div><div class="chart-subtitle">各渠道佔比</div></div></div>
+                    <div class="chart-wrap"><canvas id="overviewChannelChart" height="180"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">成本結構</div><div class="chart-subtitle">直接/間接成本佔比</div></div></div>
+                    <div class="chart-wrap"><canvas id="overviewCostChart" height="180"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE: ALERT CENTER -->
+        <div class="page" id="p-alert">
+            <div class="page-title">🚨 預警中心</div>
+            <div class="page-subtitle">即時監控毛利異常 · 連續下跌偵測 · 低毛利產品警示</div>
+            <div class="grid-cols-3" style="margin-bottom:24px;" id="alertKpis"></div>
+            <div class="section-title">⚠️ 活躍預警</div>
+            <div id="alertList"></div>
+            <div class="section-title">📉 連續下跌偵測</div>
+            <div class="chart-card">
+                <div class="chart-header"><div><div class="chart-title">毛利率連續下跌天數追蹤</div><div class="chart-subtitle">對應 DAX 公式：連續下降天數</div></div></div>
+                <div class="chart-wrap"><canvas id="alertDeclineChart" height="160"></canvas></div>
+            </div>
+            <div class="section-title">🔴 低毛利產品清單</div>
+            <div id="lowMarginTable"></div>
+        </div>
+
+        <!-- PAGE: WATERFALL -->
+        <div class="page" id="p-waterfall">
+            <div class="page-title">🌊 毛利瀑布分解</div>
+            <div class="page-subtitle">拆解毛利變動根因 · 量價成本三維分析</div>
+            <div class="grid-cols-4" style="margin-bottom:24px;" id="waterfallKpis"></div>
+            <div class="chart-card" style="margin-bottom:24px;">
+                <div class="chart-header">
+                    <div><div class="chart-title">毛利變動瀑布圖</div><div class="chart-subtitle">本期 vs 去年同期 · 各因素貢獻分解</div></div>
+                    <div style="display:flex;gap:8px;">
+                        <select id="waterfallPeriod" onchange="renderWaterfall()" style="background:var(--card-bg);border:1px solid var(--border);color:var(--text-main);padding:6px 10px;border-radius:8px;font-size:12px;"></select>
+                    </div>
+                </div>
+                <div class="chart-wrap"><canvas id="waterfallChart" height="180"></canvas></div>
+            </div>
+            <div class="grid-cols-2">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">量效應 vs 價效應</div><div class="chart-subtitle">銷量變動 vs 售價變動對毛利的影響</div></div></div>
+                    <div class="chart-wrap"><canvas id="volPriceChart" height="160"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">成本效應分解</div><div class="chart-subtitle">各成本項目變動對毛利的影響</div></div></div>
+                    <div class="chart-wrap"><canvas id="costEffectChart" height="160"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE: SCENARIO -->
+        <div class="page" id="p-scenario">
+            <div class="page-title">⚙️ 利潤情境模擬</div>
+            <div class="page-subtitle">調整關鍵參數，即時預測毛利影響</div>
+            <div class="grid-cols-2" style="margin-bottom:24px;">
+                <div class="card">
+                    <div class="card-title">🎛️ 參數調整</div>
+                    <div style="margin-bottom:16px;">
+                        <div class="sim-label"><span>售價調整</span><span id="simPriceVal" class="sim-value">0%</span></div>
+                        <input type="range" class="sim-slider" id="simPrice" min="-30" max="30" value="0" oninput="updateSim()">
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <div class="sim-label"><span>銷量調整</span><span id="simVolVal" class="sim-value">0%</span></div>
+                        <input type="range" class="sim-slider" id="simVol" min="-50" max="50" value="0" oninput="updateSim()">
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <div class="sim-label"><span>原材料成本調整</span><span id="simCostVal" class="sim-value">0%</span></div>
+                        <input type="range" class="sim-slider" id="simCost" min="-20" max="30" value="0" oninput="updateSim()">
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <div class="sim-label"><span>折扣率調整</span><span id="simDiscVal" class="sim-value">0%</span></div>
+                        <input type="range" class="sim-slider" id="simDisc" min="-10" max="10" value="0" oninput="updateSim()">
+                    </div>
+                    <button class="btn btn-outline" style="width:100%;justify-content:center;margin-top:8px;" onclick="resetSim()">↺ 重置參數</button>
+                </div>
+                <div class="card">
+                    <div class="card-title">📊 模擬結果</div>
+                    <div id="simResults"></div>
+                </div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-header"><div><div class="chart-title">基準 vs 模擬對比</div><div class="chart-subtitle">三情境：悲觀 / 基準 / 樂觀</div></div></div>
+                <div class="chart-wrap"><canvas id="simChart" height="180"></canvas></div>
+            </div>
+        </div>
+
+        <!-- PAGE: TIME SERIES -->
+        <div class="page" id="p-series">
+            <div class="page-title">📈 時間序列趨勢</div>
+            <div class="page-subtitle">月度毛利率走勢 · 移動平均 · 季節性分析</div>
+            <div class="grid-cols-3" style="margin-bottom:24px;" id="seriesKpis"></div>
+            <div class="chart-card" style="margin-bottom:24px;">
+                <div class="chart-header">
+                    <div><div class="chart-title">毛利率趨勢（含移動平均）</div><div class="chart-subtitle">藍線=實際值 · 橙線=3期移動平均 · 紅虛線=警戒線</div></div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <label style="font-size:12px;color:var(--text-dim);">警戒線</label>
+                        <input type="number" id="alertThreshold" value="30" min="0" max="100" style="width:60px;background:var(--card-bg);border:1px solid var(--border);color:var(--text-main);padding:4px 8px;border-radius:6px;font-size:12px;" oninput="renderSeries()">
+                        <span style="font-size:12px;color:var(--text-dim);">%</span>
+                    </div>
+                </div>
+                <div class="chart-wrap"><canvas id="seriesChart" height="180"></canvas></div>
+            </div>
+            <div class="grid-cols-2">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">月度收入 vs 成本</div></div></div>
+                    <div class="chart-wrap"><canvas id="seriesRevCostChart" height="180"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">YoY 毛利率對比</div><div class="chart-subtitle">本期 vs 去年同期</div></div></div>
+                    <div class="chart-wrap"><canvas id="seriesYoyChart" height="180"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE: BCG -->
+        <div class="page" id="p-bcg">
+            <div class="page-title">📦 產品組合分析 (BCG)</div>
+            <div class="page-subtitle">BCG 矩陣定位 · 產品毛利率排行 · 高毛利貢獻度分析</div>
+            <div class="chart-card" style="margin-bottom:24px;">
+                <div class="chart-header"><div><div class="chart-title">BCG 矩陣（相對市占率 × 市場成長率）</div><div class="chart-subtitle">氣泡大小 = 銷售額 · 顏色 = 毛利率高低</div></div></div>
+                <div class="chart-wrap"><canvas id="bcgChart" height="220"></canvas></div>
+            </div>
+            <div class="grid-cols-2">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">產品毛利率排行</div></div></div>
+                    <div class="chart-wrap"><canvas id="bcgBarChart" height="160"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">產品明細表</div></div></div>
+                    <div id="bcgTable" style="overflow-x:auto;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE: PRICING -->
+        <div class="page" id="p-pricing">
+            <div class="page-title">🎯 最佳定價分析</div>
+            <div class="page-subtitle">售價 × 銷量 × 毛利率三維分析 · 找到毛利額峰值點</div>
+            <div class="alert-card alert-warning" style="margin-bottom:20px;">
+                <span class="alert-icon">💡</span>
+                <div><div class="alert-title">核心洞察</div><div class="alert-body">追求最高「毛利率」≠ 賺最多「錢」！目標是找到毛利「額」的峰值——即組合圖中絕對值柱狀圖的最高點所對應的定價。</div></div>
+            </div>
+            <div class="chart-card" style="margin-bottom:24px;">
+                <div class="chart-header"><div><div class="chart-title">售價 vs 銷量 vs 毛利率（三維散點圖）</div><div class="chart-subtitle">X軸=售價 · Y軸=銷量 · 氣泡大小=毛利率</div></div></div>
+                <div class="chart-wrap"><canvas id="pricingScatterChart" height="200"></canvas></div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-header"><div><div class="chart-title">毛利率 vs 毛利額組合圖</div><div class="chart-subtitle">柱狀=毛利額 · 折線=毛利率 · 找到峰值點</div></div></div>
+                <div class="chart-wrap"><canvas id="pricingComboChart" height="180"></canvas></div>
+            </div>
+        </div>
+
+        <!-- PAGE: GEO -->
+        <div class="page" id="p-geo">
+            <div class="page-title">🌍 地域渠道分析</div>
+            <div class="page-subtitle">各地區毛利率差異 · 渠道 ROI · 組合優化</div>
+            <div class="grid-cols-2" style="margin-bottom:24px;">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">地區毛利率雷達圖</div><div class="chart-subtitle">五維度：毛利率/配送效率/售價溢價/市場份額/品牌知名度</div></div></div>
+                    <div class="chart-wrap"><canvas id="geoRadarChart" height="200"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">渠道效率組合圖</div><div class="chart-subtitle">銷售額/毛利額柱狀 + 毛利率折線（雙軸）</div></div></div>
+                    <div class="chart-wrap"><canvas id="channelEfficiencyChart" height="200"></canvas></div>
+                </div>
+            </div>
+            <div class="section-title">地區績效總表</div>
+            <div id="geoTable" style="overflow-x:auto;"></div>
+        </div>
+
+        <!-- PAGE: HEATMAP -->
+        <div class="page" id="p-heatmap">
+            <div class="page-title">🔥 地區熱力圖</div>
+            <div class="page-subtitle">地區 × 月份毛利率矩陣 · 快速識別異常區域</div>
+            <div class="chart-card" style="margin-bottom:24px;">
+                <div class="chart-header"><div><div class="chart-title">地區 × 月份毛利率熱力圖</div><div class="chart-subtitle">顏色越深=毛利率越高 · 點擊格子查看詳情</div></div></div>
+                <div id="heatmapContainer" style="overflow-x:auto;padding:8px 0;"></div>
+            </div>
+            <div class="grid-cols-2">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">地區毛利率分佈</div></div></div>
+                    <div class="chart-wrap"><canvas id="heatmapBarChart" height="200"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">月份毛利率趨勢（各地區）</div></div></div>
+                    <div class="chart-wrap"><canvas id="heatmapLineChart" height="200"></canvas></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PAGE: COST -->
+        <div class="page" id="p-cost">
+            <div class="page-title">💰 精細成本拆解</div>
+            <div class="page-subtitle">帕累托 20/80 分析 · 成本結構樹狀圖 · YoY 成本變動</div>
+            <div class="grid-cols-2" style="margin-bottom:24px;">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">成本結構樹狀圖</div><div class="chart-subtitle">面積=金額佔比</div></div></div>
+                    <div id="costTreemap" style="height:200px;"></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">帕累托分析（20/80）</div><div class="chart-subtitle">柱狀=金額 · 折線=累計佔比</div></div></div>
+                    <div class="chart-wrap"><canvas id="costParetoChart" height="200"></canvas></div>
+                </div>
+            </div>
+            <div class="chart-card">
+                <div class="chart-header"><div><div class="chart-title">成本 YoY 變動</div><div class="chart-subtitle">本期 vs 去年同期</div></div></div>
+                <div class="chart-wrap"><canvas id="costYoyChart" height="180"></canvas></div>
+            </div>
+        </div>
+
+        <!-- PAGE: CUSTOMER -->
+        <div class="page" id="p-customer">
+            <div class="page-title">👥 客戶價值分析</div>
+            <div class="page-subtitle">LTV × 毛利貢獻 · 客戶等級分佈 · 高端客戶開發策略</div>
+            <div class="grid-cols-2" style="margin-bottom:24px;">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">LTV vs 毛利貢獻率（氣泡圖）</div><div class="chart-subtitle">氣泡大小=購買頻率</div></div></div>
+                    <div class="chart-wrap"><canvas id="customerBubbleChart" height="200"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">客戶等級分佈</div></div></div>
+                    <div class="chart-wrap"><canvas id="customerDonutChart" height="200"></canvas></div>
+                </div>
+            </div>
+            <div class="section-title">客戶價值明細表</div>
+            <div id="customerTable" style="overflow-x:auto;"></div>
+        </div>
+
+        <!-- PAGE: PROMO -->
+        <div class="page" id="p-promo">
+            <div class="page-title">🎯 折扣促銷評估</div>
+            <div class="page-subtitle">促銷 ROI · 折扣率 vs 銷量彈性 · 品牌溢價侵蝕風險</div>
+            <div class="grid-cols-2" style="margin-bottom:24px;">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">折扣率 vs 銷量增幅</div><div class="chart-subtitle">散點圖 · 找到最佳折扣平衡點</div></div></div>
+                    <div class="chart-wrap"><canvas id="promoScatterChart" height="180"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">促銷活動 ROI 排行</div><div class="chart-subtitle">橫條圖 · 含評級</div></div></div>
+                    <div class="chart-wrap"><canvas id="promoRoiChart" height="180"></canvas></div>
+                </div>
+            </div>
+            <div class="section-title">促銷活動明細表</div>
+            <div id="promoTable" style="overflow-x:auto;"></div>
+        </div>
+
+        <!-- PAGE: SUPPLIER -->
+        <div class="page" id="p-supplier">
+            <div class="page-title">🏭 供應商分析</div>
+            <div class="page-subtitle">採購成本結構 · 供應商集中度 · 加權平均採購成本</div>
+            <div class="grid-cols-3" style="margin-bottom:24px;" id="supplierKpis"></div>
+            <div class="grid-cols-2" style="margin-bottom:24px;">
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">供應商採購金額佔比</div></div></div>
+                    <div class="chart-wrap"><canvas id="supplierPieChart" height="180"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-header"><div><div class="chart-title">供應商單位成本對比</div><div class="chart-subtitle">加權平均採購成本分析</div></div></div>
+                    <div class="chart-wrap"><canvas id="supplierCostChart" height="180"></canvas></div>
+                </div>
+            </div>
+            <div class="section-title">供應商明細表</div>
+            <div id="supplierTable" style="overflow-x:auto;"></div>
+        </div>
+
+        <!-- PAGE: DAX -->
+        <div class="page" id="p-dax">
+            <div class="page-title">📖 DAX 知識庫</div>
+            <div class="page-subtitle">15+ 條完整 DAX 公式 · Filter Context 解析 · 常見陷阱</div>
+            <div class="tabs" id="daxTabs">
+                <div class="tab active" onclick="switchDaxTab('基礎指標',this)">基礎指標</div>
+                <div class="tab" onclick="switchDaxTab('時間智能',this)">時間智能</div>
+                <div class="tab" onclick="switchDaxTab('進階分析',this)">進階分析</div>
+                <div class="tab" onclick="switchDaxTab('視覺化',this)">視覺化</div>
+            </div>
+            <div id="daxContent"></div>
+        </div>
+
+    </main>
+</div>
+
+<script>
+Chart.register(ChartDataLabels);
+
+// ─── DEFAULT DATA ───────────────────────────────────────────────────────────
+const DEFAULT_DATA = {
+    monthly: [
+        {時間:'1月',銷售收入:420,銷售成本:294,去年同期收入:390,去年同期成本:281,目標收入:430},
+        {時間:'2月',銷售收入:385,銷售成本:277,去年同期收入:360,去年同期成本:266,目標收入:400},
+        {時間:'3月',銷售收入:510,銷售成本:357,去年同期收入:470,去年同期成本:338,目標收入:500},
+        {時間:'4月',銷售收入:490,銷售成本:352,去年同期收入:450,去年同期成本:324,目標收入:480},
+        {時間:'5月',銷售收入:560,銷售成本:392,去年同期收入:520,去年同期成本:374,目標收入:550},
+        {時間:'6月',銷售收入:620,銷售成本:434,去年同期收入:580,去年同期成本:406,目標收入:600},
+        {時間:'7月',銷售收入:580,銷售成本:420,去年同期收入:540,去年同期成本:389,目標收入:570},
+        {時間:'8月',銷售收入:540,銷售成本:394,去年同期收入:500,去年同期成本:365,目標收入:540},
+        {時間:'9月',銷售收入:480,銷售成本:355,去年同期收入:460,去年同期成本:336,目標收入:490},
+        {時間:'10月',銷售收入:520,銷售成本:374,去年同期收入:490,去年同期成本:353,目標收入:510},
+        {時間:'11月',銷售收入:610,銷售成本:427,去年同期收入:570,去年同期成本:399,目標收入:600},
+        {時間:'12月',銷售收入:680,銷售成本:462,去年同期收入:630,去年同期成本:441,目標收入:660}
+    ],
+    products: [
+        {產品名稱:'經典棉T',類別:'服飾類',銷售單價:580,單位成本:290,銷售總量:1200,相對市占率:1.8,市場成長率:12,BCG象限:'明星'},
+        {產品名稱:'運動外套',類別:'服飾類',銷售單價:1280,單位成本:768,銷售總量:680,相對市占率:0.9,市場成長率:18,BCG象限:'問題'},
+        {產品名稱:'牛仔褲',類別:'服飾類',銷售單價:890,單位成本:445,銷售總量:950,相對市占率:2.1,市場成長率:5,BCG象限:'金牛'},
+        {產品名稱:'銀項鍊',類別:'飾品類',銷售單價:1580,單位成本:632,銷售總量:420,相對市占率:1.5,市場成長率:22,BCG象限:'明星'},
+        {產品名稱:'皮革手環',類別:'飾品類',銷售單價:380,單位成本:228,銷售總量:860,相對市占率:0.6,市場成長率:3,BCG象限:'瘦狗'},
+        {產品名稱:'運動鞋',類別:'鞋類',銷售單價:2200,單位成本:1100,銷售總量:380,相對市占率:1.2,市場成長率:15,BCG象限:'明星'},
+        {產品名稱:'休閒鞋',類別:'鞋類',銷售單價:1450,單位成本:870,銷售總量:520,相對市占率:1.9,市場成長率:7,BCG象限:'金牛'}
+    ],
+    costs: [
+        {成本大類:'直接成本',成本小類:'原材料',金額:1850,去年金額:1720},
+        {成本大類:'直接成本',成本小類:'直接人工',金額:620,去年金額:590},
+        {成本大類:'直接成本',成本小類:'製造費用',金額:380,去年金額:360},
+        {成本大類:'間接成本',成本小類:'物流配送',金額:480,去年金額:440},
+        {成本大類:'間接成本',成本小類:'倉儲費用',金額:220,去年金額:210},
+        {成本大類:'間接成本',成本小類:'行銷費用',金額:340,去年金額:310},
+        {成本大類:'間接成本',成本小類:'管理費用',金額:180,去年金額:175},
+        {成本大類:'間接成本',成本小類:'退貨損耗',金額:95,去年金額:88}
+    ],
+    customers: [
+        {客戶名稱:'台北百貨A',LTV總額:2850,毛利貢獻率:38,購買頻率:24,客戶等級:'鑽石'},
+        {客戶名稱:'新北電商B',LTV總額:1920,毛利貢獻率:32,購買頻率:18,客戶等級:'金'},
+        {客戶名稱:'台中直營C',LTV總額:1580,毛利貢獻率:35,購買頻率:15,客戶等級:'金'},
+        {客戶名稱:'高雄經銷D',LTV總額:980,毛利貢獻率:28,購買頻率:10,客戶等級:'銀'},
+        {客戶名稱:'桃園批發E',LTV總額:760,毛利貢獻率:22,購買頻率:8,客戶等級:'銀'},
+        {客戶名稱:'網路零售F',LTV總額:540,毛利貢獻率:30,購買頻率:36,客戶等級:'銅'},
+        {客戶名稱:'企業採購G',LTV總額:3200,毛利貢獻率:42,購買頻率:6,客戶等級:'鑽石'},
+        {客戶名稱:'海外代理H',LTV總額:1100,毛利貢獻率:25,購買頻率:4,客戶等級:'銀'}
+    ],
+    regions: [
+        {地區名稱:'台北',毛利率:38,配送效率:85,售價溢價:90,市場份額:80,品牌知名度:88},
+        {地區名稱:'新北',毛利率:34,配送效率:78,售價溢價:75,市場份額:65,品牌知名度:72},
+        {地區名稱:'台中',毛利率:32,配送效率:72,售價溢價:68,市場份額:58,品牌知名度:65},
+        {地區名稱:'高雄',毛利率:30,配送效率:68,售價溢價:62,市場份額:52,品牌知名度:60},
+        {地區名稱:'桃園',毛利率:33,配送效率:75,售價溢價:70,市場份額:55,品牌知名度:62}
+    ],
+    channels: [
+        {渠道名稱:'品牌官網',銷售額:1850,成本:1110,渠道類型:'直銷'},
+        {渠道名稱:'電商平台',銷售額:2200,成本:1540,渠道類型:'電商'},
+        {渠道名稱:'直營門市',銷售額:1680,成本:1176,渠道類型:'直銷'},
+        {渠道名稱:'百貨專櫃',銷售額:1420,成本:1065,渠道類型:'經銷'},
+        {渠道名稱:'經銷商',銷售額:980,成本:784,渠道類型:'經銷'}
+    ],
+    promotions: [
+        {活動名稱:'春節特賣',折扣率:15,銷量增幅:45,毛利變動:-8,活動類型:'節慶'},
+        {活動名稱:'會員日',折扣率:10,銷量增幅:28,毛利變動:5,活動類型:'會員'},
+        {活動名稱:'清倉特賣',折扣率:30,銷量增幅:80,毛利變動:-22,活動類型:'清倉'},
+        {活動名稱:'新品上市',折扣率:5,銷量增幅:15,毛利變動:8,活動類型:'新品'},
+        {活動名稱:'雙11',折扣率:20,銷量增幅:120,毛利變動:-5,活動類型:'節慶'},
+        {活動名稱:'週年慶',折扣率:12,銷量增幅:35,毛利變動:2,活動類型:'節慶'},
+        {活動名稱:'買一送一',折扣率:50,銷量增幅:200,毛利變動:-35,活動類型:'促銷'},
+        {活動名稱:'積分兌換',折扣率:8,銷量增幅:20,毛利變動:6,活動類型:'會員'}
+    ],
+    suppliers: [
+        {供應商名稱:'棉紡A廠',採購金額:580,採購數量:4200,單位成本:138,品類:'服飾類',付款條件:'Net30'},
+        {供應商名稱:'化纖B廠',採購金額:420,採購數量:3800,單位成本:111,品類:'服飾類',付款條件:'Net45'},
+        {供應商名稱:'金屬C廠',採購金額:280,採購數量:1200,單位成本:233,品類:'飾品類',付款條件:'Net30'},
+        {供應商名稱:'皮革D廠',採購金額:190,採購數量:980,單位成本:194,品類:'飾品類',付款條件:'Net60'},
+        {供應商名稱:'橡膠E廠',採購金額:350,採購數量:1800,單位成本:194,品類:'鞋類',付款條件:'Net30'},
+        {供應商名稱:'布料F廠',採購金額:230,採購數量:2100,單位成本:110,品類:'鞋類',付款條件:'Net45'}
+    ],
+    targets: [
+        {指標名稱:'整體毛利率',目標值:35,警戒值:30,單位:'%'},
+        {指標名稱:'服飾類毛利率',目標值:40,警戒值:35,單位:'%'},
+        {指標名稱:'飾品類毛利率',目標值:55,警戒值:48,單位:'%'},
+        {指標名稱:'鞋類毛利率',目標值:38,警戒值:32,單位:'%'},
+        {指標名稱:'連續下跌天數',目標值:0,警戒值:3,單位:'天'}
+    ]
+};
+
+let DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
+let CHARTS = {};
+
+// ─── HELPERS ────────────────────────────────────────────────────────────────
+const C = {
+    accent:'#63b3ed', success:'#68d391', warning:'#f6ad55', danger:'#fc8181',
+    purple:'#b794f4', teal:'#4fd1c5', pink:'#f687b3',
+    palette:['#63b3ed','#68d391','#f6ad55','#b794f4','#fc8181','#4fd1c5','#f687b3','#fbd38d','#90cdf4','#9ae6b4']
+};
+const fmt = {
+    pct: v => (v*100).toFixed(1)+'%',
+    pctN: v => v.toFixed(1)+'%',
+    money: v => (v>=10000?'$'+(v/10000).toFixed(1)+'萬':'$'+v.toLocaleString()),
+    num: v => v.toLocaleString()
+};
+function calcMargin(rev,cost){ return rev>0?((rev-cost)/rev*100):0; }
+function movingAvg(arr,n){ return arr.map((_,i)=>i<n-1?null:arr.slice(i-n+1,i+1).reduce((a,b)=>a+b,0)/n); }
+function destroyChart(id){ if(CHARTS[id]){ CHARTS[id].destroy(); delete CHARTS[id]; } }
+function mkChart(id,cfg){ destroyChart(id); const ctx=document.getElementById(id); if(!ctx)return; CHARTS[id]=new Chart(ctx,cfg); return CHARTS[id]; }
+const darkDefaults = { color:'#94a3b8', grid:{ color:'rgba(255,255,255,0.06)' }, ticks:{ color:'#94a3b8' } };
+function openModal(id){ document.getElementById(id).classList.add('active'); }
+function closeModal(id){ document.getElementById(id).classList.remove('active'); }
+
+// ─── NAVIGATION ─────────────────────────────────────────────────────────────
+function switchPage(id, el){
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    el.classList.add('active');
+    document.getElementById('currentPageName').textContent = el.querySelector('span:last-of-type').textContent;
+    renderPage(id);
+}
+
+function renderPage(id){
+    const map = {
+        'p-overview': renderOverview,
+        'p-alert': renderAlert,
+        'p-waterfall': renderWaterfall,
+        'p-scenario': renderScenario,
+        'p-series': renderSeries,
+        'p-bcg': renderBCG,
+        'p-pricing': renderPricing,
+        'p-geo': renderGeo,
+        'p-heatmap': renderHeatmap,
+        'p-cost': renderCost,
+        'p-customer': renderCustomer,
+        'p-promo': renderPromo,
+        'p-supplier': renderSupplier,
+        'p-dax': renderDax
+    };
+    if(map[id]) map[id]();
+}
+
+// ─── OVERVIEW ───────────────────────────────────────────────────────────────
+function renderOverview(){
+    const m = DATA.monthly;
+    const totalRev = m.reduce((s,r)=>s+r.銷售收入,0);
+    const totalCost = m.reduce((s,r)=>s+r.銷售成本,0);
+    const totalGP = totalRev - totalCost;
+    const gm = calcMargin(totalRev,totalCost);
+    const lyRev = m.reduce((s,r)=>s+r.去年同期收入,0);
+    const lyCost = m.reduce((s,r)=>s+r.去年同期成本,0);
+    const lyGM = calcMargin(lyRev,lyCost);
+    const gmDiff = gm - lyGM;
+    const revGrowth = ((totalRev-lyRev)/lyRev*100);
+
+    const kpis = [
+        {label:'年度銷售收入',value:'$'+totalRev.toLocaleString(),unit:'萬',trend:revGrowth,trendLabel:'YoY',color:C.accent},
+        {label:'年度銷售毛利',value:'$'+totalGP.toLocaleString(),unit:'萬',trend:((totalGP-(lyRev-lyCost))/(lyRev-lyCost)*100),trendLabel:'YoY',color:C.success},
+        {label:'整體毛利率',value:gm.toFixed(1),unit:'%',trend:gmDiff,trendLabel:'vs去年',color:gm>=35?C.success:gm>=30?C.warning:C.danger},
+        {label:'目標達成率',value:(totalRev/m.reduce((s,r)=>s+r.目標收入,0)*100).toFixed(1),unit:'%',trend:null,trendLabel:'',color:C.purple}
+    ];
+    document.getElementById('kpiCards').innerHTML = kpis.map(k=>`
+        <div class="card">
+            <div class="card-title">${k.label}</div>
+            <div class="kpi-value" style="color:${k.color}">${k.value}<span class="kpi-unit">${k.unit}</span></div>
+            ${k.trend!==null?`<div class="kpi-trend ${k.trend>=0?'trend-up':'trend-down'}">${k.trend>=0?'▲':'▼'} ${Math.abs(k.trend).toFixed(1)}% ${k.trendLabel}</div>`:''}
+        </div>`).join('');
+
+    const labels = m.map(r=>r.時間);
+    const margins = m.map(r=>calcMargin(r.銷售收入,r.銷售成本));
+    const lyMargins = m.map(r=>calcMargin(r.去年同期收入,r.去年同期成本));
+    const targetMargins = m.map(r=>calcMargin(r.目標收入,r.目標收入*0.65));
+
+    mkChart('overviewTrendChart',{type:'line',data:{labels,datasets:[
+        {label:'本期毛利率',data:margins,borderColor:C.accent,backgroundColor:'rgba(99,179,237,0.1)',fill:true,tension:0.4,pointRadius:3},
+        {label:'去年同期',data:lyMargins,borderColor:C.purple,borderDash:[4,4],fill:false,tension:0.4,pointRadius:2},
+        {label:'目標線',data:Array(12).fill(35),borderColor:C.warning,borderDash:[6,3],fill:false,pointRadius:0}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults,ticks:{...darkDefaults.ticks,callback:v=>v+'%'}}}}});
+
+    const prods = DATA.products;
+    const prodMargins = prods.map(p=>calcMargin(p.銷售單價,p.單位成本));
+    mkChart('overviewProductChart',{type:'bar',data:{labels:prods.map(p=>p.產品名稱),datasets:[{label:'毛利率',data:prodMargins,backgroundColor:prodMargins.map(v=>v>=50?C.success:v>=40?C.accent:v>=30?C.warning:C.danger),borderRadius:6}]},options:{responsive:true,plugins:{legend:{display:false},datalabels:{display:true,color:'#fff',font:{size:10},formatter:v=>v.toFixed(1)+'%',anchor:'end',align:'top'}},scales:{x:{...darkDefaults},y:{...darkDefaults,ticks:{...darkDefaults.ticks,callback:v=>v+'%'}}}}});
+
+    mkChart('overviewRevCostChart',{type:'bar',data:{labels,datasets:[
+        {label:'銷售收入',data:m.map(r=>r.銷售收入),backgroundColor:'rgba(99,179,237,0.7)',borderRadius:4},
+        {label:'銷售成本',data:m.map(r=>r.銷售成本),backgroundColor:'rgba(252,129,129,0.7)',borderRadius:4}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:10}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults}}}});
+
+    const ch = DATA.channels;
+    mkChart('overviewChannelChart',{type:'doughnut',data:{labels:ch.map(c=>c.渠道名稱),datasets:[{data:ch.map(c=>c.銷售額-c.成本),backgroundColor:C.palette,borderWidth:0}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:true,color:'#fff',font:{size:10},formatter:(v,ctx)=>ctx.chart.data.labels[ctx.dataIndex]}}}});
+
+    const costs = DATA.costs;
+    const direct = costs.filter(c=>c.成本大類==='直接成本').reduce((s,c)=>s+c.金額,0);
+    const indirect = costs.filter(c=>c.成本大類==='間接成本').reduce((s,c)=>s+c.金額,0);
+    mkChart('overviewCostChart',{type:'pie',data:{labels:['直接成本','間接成本'],datasets:[{data:[direct,indirect],backgroundColor:['rgba(99,179,237,0.8)','rgba(183,148,244,0.8)'],borderWidth:0}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8'}},datalabels:{display:true,color:'#fff',formatter:(v,ctx)=>{const t=ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);return (v/t*100).toFixed(1)+'%';}}}}});
+}
+
+// ─── ALERT CENTER ────────────────────────────────────────────────────────────
+function renderAlert(){
+    const m = DATA.monthly;
+    const margins = m.map(r=>calcMargin(r.銷售收入,r.銷售成本));
+    const threshold = parseFloat(document.getElementById('alertThreshold')?.value||30);
+    const targets = DATA.targets;
+    const getTarget = name => targets.find(t=>t.指標名稱===name);
+
+    // 計算連續下跌天數
+    let consecutive = 0, maxConsec = 0;
+    for(let i=1;i<margins.length;i++){
+        if(margins[i]<margins[i-1]){ consecutive++; maxConsec=Math.max(maxConsec,consecutive); }
+        else consecutive=0;
+    }
+    const currentGM = margins[margins.length-1];
+    const alertTarget = getTarget('整體毛利率');
+    const alerts = [];
+
+    if(currentGM < (alertTarget?.警戒值||30)) alerts.push({type:'danger',icon:'🔴',title:`整體毛利率低於警戒線`,body:`當前 ${currentGM.toFixed(1)}% < 警戒值 ${alertTarget?.警戒值||30}%`});
+    if(maxConsec >= (getTarget('連續下跌天數')?.警戒值||3)) alerts.push({type:'warning',icon:'⚠️',title:`毛利率連續下跌 ${maxConsec} 個月`,body:'持續折扣可能侵蝕品牌溢價，建議立即審查定價策略'});
+
+    const lowProds = DATA.products.filter(p=>calcMargin(p.銷售單價,p.單位成本)<35);
+    if(lowProds.length>0) alerts.push({type:'warning',icon:'📦',title:`${lowProds.length} 個產品毛利率低於 35%`,body:lowProds.map(p=>p.產品名稱).join('、')});
+
+    const highCostGrowth = DATA.costs.filter(c=>c.去年金額>0&&(c.金額-c.去年金額)/c.去年金額>0.1);
+    if(highCostGrowth.length>0) alerts.push({type:'warning',icon:'💸',title:`${highCostGrowth.length} 項成本增幅超過 10%`,body:highCostGrowth.map(c=>c.成本小類).join('、')});
+
+    if(alerts.length===0) alerts.push({type:'success',icon:'✅',title:'所有指標正常',body:'目前無預警項目，繼續保持！'});
+
+    document.getElementById('alertBadge').textContent = alerts.filter(a=>a.type!=='success').length;
+    document.getElementById('alertList').innerHTML = alerts.map(a=>`
+        <div class="alert-card alert-${a.type}">
+            <span class="alert-icon">${a.icon}</span>
+            <div><div class="alert-title">${a.title}</div><div class="alert-body">${a.body}</div></div>
+        </div>`).join('');
+
+    document.getElementById('alertKpis').innerHTML = [
+        {label:'當前毛利率',value:currentGM.toFixed(1)+'%',color:currentGM>=35?C.success:currentGM>=30?C.warning:C.danger},
+        {label:'最長連續下跌',value:maxConsec+'個月',color:maxConsec>=3?C.danger:maxConsec>=2?C.warning:C.success},
+        {label:'低毛利產品數',value:lowProds.length+'個',color:lowProds.length>2?C.danger:lowProds.length>0?C.warning:C.success}
+    ].map(k=>`<div class="card"><div class="card-title">${k.label}</div><div class="kpi-value" style="color:${k.color}">${k.value}</div></div>`).join('');
+
+    mkChart('alertDeclineChart',{type:'line',data:{labels:m.map(r=>r.時間),datasets:[
+        {label:'毛利率',data:margins,borderColor:C.accent,backgroundColor:'rgba(99,179,237,0.1)',fill:true,tension:0.4,pointRadius:4,pointBackgroundColor:margins.map(v=>v<30?C.danger:v<35?C.warning:C.success)},
+        {label:'警戒線(30%)',data:Array(12).fill(30),borderColor:C.danger,borderDash:[5,3],fill:false,pointRadius:0}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults,ticks:{...darkDefaults.ticks,callback:v=>v+'%'}}}}});
+
+    document.getElementById('lowMarginTable').innerHTML = `<div class="chart-card"><table>
+        <thead><tr><th>產品名稱</th><th>類別</th><th>售價</th><th>成本</th><th>毛利率</th><th>狀態</th></tr></thead>
+        <tbody>${DATA.products.map(p=>{const gm=calcMargin(p.銷售單價,p.單位成本);return `<tr>
+            <td>${p.產品名稱}</td><td>${p.類別}</td><td>$${p.銷售單價}</td><td>$${p.單位成本}</td>
+            <td style="color:${gm>=40?C.success:gm>=30?C.warning:C.danger};font-weight:700">${gm.toFixed(1)}%</td>
+            <td><span class="badge badge-${gm>=40?'success':gm>=30?'warning':'danger'}">${gm>=40?'正常':gm>=30?'注意':'警告'}</span></td>
+        </tr>`;}).join('')}</tbody></table></div>`;
+}
+
+// ─── WATERFALL ───────────────────────────────────────────────────────────────
+function renderWaterfall(){
+    const m = DATA.monthly;
+    const sel = document.getElementById('waterfallPeriod');
+    if(sel.options.length===0) m.forEach((r,i)=>{ const o=document.createElement('option'); o.value=i; o.text=r.時間; sel.appendChild(o); });
+    const idx = parseInt(sel.value)||11;
+    const cur = m[idx], prev = m[Math.max(0,idx-1)];
+
+    const curGP = cur.銷售收入 - cur.銷售成本;
+    const lyGP = cur.去年同期收入 - cur.去年同期成本;
+    const revEffect = cur.銷售收入 - cur.去年同期收入;
+    const costEffect = -(cur.銷售成本 - cur.去年同期成本);
+    const volEffect = revEffect * 0.6;
+    const priceEffect = revEffect * 0.4;
+    const matEffect = costEffect * 0.5;
+    const logEffect = costEffect * 0.3;
+    const otherEffect = costEffect * 0.2;
+
+    document.getElementById('waterfallKpis').innerHTML = [
+        {label:'去年同期毛利',value:'$'+lyGP.toLocaleString(),color:C.purple},
+        {label:'本期毛利',value:'$'+curGP.toLocaleString(),color:C.accent},
+        {label:'毛利變動',value:(curGP-lyGP>=0?'+':'')+'$'+(curGP-lyGP).toLocaleString(),color:curGP>=lyGP?C.success:C.danger},
+        {label:'毛利率',value:calcMargin(cur.銷售收入,cur.銷售成本).toFixed(1)+'%',color:C.teal}
+    ].map(k=>`<div class="card"><div class="card-title">${k.label}</div><div class="kpi-value" style="color:${k.color}">${k.value}</div></div>`).join('');
+
+    const wfLabels = ['去年毛利','量效應','價效應','原材料','物流','其他','本期毛利'];
+    const wfData = [lyGP, volEffect, priceEffect, matEffect, logEffect, otherEffect, curGP];
+    const wfColors = [C.purple, volEffect>=0?C.success:C.danger, priceEffect>=0?C.success:C.danger, matEffect>=0?C.success:C.danger, logEffect>=0?C.success:C.danger, otherEffect>=0?C.success:C.danger, C.accent];
+
+    // 瀑布圖用堆疊柱狀圖模擬
+    let running = lyGP;
+    const bases = [0];
+    const bars = [lyGP];
+    [volEffect,priceEffect,matEffect,logEffect,otherEffect].forEach(v=>{ bases.push(running<running+v?running:running+v); bars.push(Math.abs(v)); running+=v; });
+    bases.push(0); bars.push(curGP);
+
+    mkChart('waterfallChart',{type:'bar',data:{labels:wfLabels,datasets:[
+        {label:'基底',data:bases,backgroundColor:'transparent',borderWidth:0},
+        {label:'變動',data:bars,backgroundColor:wfColors,borderRadius:4,borderWidth:0}
+    ]},options:{responsive:true,plugins:{legend:{display:false},datalabels:{display:true,color:'#fff',font:{size:11,weight:'bold'},formatter:(v,ctx)=>ctx.datasetIndex===1?'$'+v.toFixed(0):''}},scales:{x:{...darkDefaults,stacked:true},y:{...darkDefaults,stacked:true}}}});
+
+    mkChart('volPriceChart',{type:'bar',data:{labels:['量效應','價效應'],datasets:[{data:[volEffect,priceEffect],backgroundColor:[volEffect>=0?C.success:C.danger,priceEffect>=0?C.success:C.danger],borderRadius:6}]},options:{responsive:true,plugins:{legend:{display:false},datalabels:{display:true,color:'#fff',font:{size:12,weight:'bold'},formatter:v=>(v>=0?'+':'')+'$'+v.toFixed(0)}},scales:{x:{...darkDefaults},y:{...darkDefaults}}}});
+
+    mkChart('costEffectChart',{type:'bar',data:{labels:['原材料','物流','其他'],datasets:[{data:[matEffect,logEffect,otherEffect],backgroundColor:[matEffect>=0?C.success:C.danger,logEffect>=0?C.success:C.danger,otherEffect>=0?C.success:C.danger],borderRadius:6}]},options:{responsive:true,plugins:{legend:{display:false},datalabels:{display:true,color:'#fff',font:{size:12,weight:'bold'},formatter:v=>(v>=0?'+':'')+'$'+v.toFixed(0)}},scales:{x:{...darkDefaults},y:{...darkDefaults}}}});
+}
+
+// ─── SCENARIO ────────────────────────────────────────────────────────────────
+function renderScenario(){
+    updateSim();
+}
+function updateSim(){
+    const priceAdj = parseFloat(document.getElementById('simPrice').value)/100;
+    const volAdj = parseFloat(document.getElementById('simVol').value)/100;
+    const costAdj = parseFloat(document.getElementById('simCost').value)/100;
+    const discAdj = parseFloat(document.getElementById('simDisc').value)/100;
+    document.getElementById('simPriceVal').textContent = (priceAdj*100>=0?'+':'')+Math.round(priceAdj*100)+'%';
+    document.getElementById('simVolVal').textContent = (volAdj*100>=0?'+':'')+Math.round(volAdj*100)+'%';
+    document.getElementById('simCostVal').textContent = (costAdj*100>=0?'+':'')+Math.round(costAdj*100)+'%';
+    document.getElementById('simDiscVal').textContent = (discAdj*100>=0?'+':'')+Math.round(discAdj*100)+'%';
+
+    const m = DATA.monthly;
+    const baseRev = m.reduce((s,r)=>s+r.銷售收入,0);
+    const baseCost = m.reduce((s,r)=>s+r.銷售成本,0);
+    const baseGP = baseRev - baseCost;
+    const baseGM = calcMargin(baseRev,baseCost);
+
+    const simRev = baseRev * (1+priceAdj) * (1+volAdj) * (1-discAdj);
+    const simCost = baseCost * (1+costAdj) * (1+volAdj);
+    const simGP = simRev - simCost;
+    const simGM = calcMargin(simRev,simCost);
+    const gpChange = simGP - baseGP;
+    const gmChange = simGM - baseGM;
+
+    document.getElementById('simResults').innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+            <div><div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">基準毛利率</div><div style="font-size:22px;font-weight:700;color:${C.purple}">${baseGM.toFixed(1)}%</div></div>
+            <div><div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">模擬毛利率</div><div style="font-size:22px;font-weight:700;color:${simGM>=baseGM?C.success:C.danger}">${simGM.toFixed(1)}%</div></div>
+            <div><div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">基準毛利額</div><div style="font-size:18px;font-weight:700;color:${C.purple}">$${baseGP.toLocaleString()}</div></div>
+            <div><div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">模擬毛利額</div><div style="font-size:18px;font-weight:700;color:${simGP>=baseGP?C.success:C.danger}">$${simGP.toLocaleString()}</div></div>
+        </div>
+        <div class="alert-card alert-${gpChange>=0?'success':'danger'}">
+            <span class="alert-icon">${gpChange>=0?'📈':'📉'}</span>
+            <div>
+                <div class="alert-title">毛利額變動：${gpChange>=0?'+':''}$${gpChange.toLocaleString()}</div>
+                <div class="alert-body">毛利率變動：${gmChange>=0?'+':''}${gmChange.toFixed(2)} pp</div>
+            </div>
+        </div>`;
+
+    const pessimistic = {rev:baseRev*0.9,cost:baseCost*1.05};
+    const optimistic = {rev:baseRev*1.15,cost:baseCost*0.95};
+    mkChart('simChart',{type:'bar',data:{
+        labels:['悲觀情境','基準情境','模擬情境','樂觀情境'],
+        datasets:[
+            {label:'銷售收入',data:[pessimistic.rev,baseRev,simRev,optimistic.rev],backgroundColor:'rgba(99,179,237,0.7)',borderRadius:4},
+            {label:'銷售成本',data:[pessimistic.cost,baseCost,simCost,optimistic.cost],backgroundColor:'rgba(252,129,129,0.7)',borderRadius:4},
+            {label:'毛利額',data:[pessimistic.rev-pessimistic.cost,baseGP,simGP,optimistic.rev-optimistic.cost],backgroundColor:'rgba(104,211,145,0.7)',borderRadius:4}
+        ]
+    },options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults}}}});
+}
+function resetSim(){
+    ['simPrice','simVol','simCost','simDisc'].forEach(id=>document.getElementById(id).value=0);
+    updateSim();
+}
+
+// ─── TIME SERIES ─────────────────────────────────────────────────────────────
+function renderSeries(){
+    const m = DATA.monthly;
+    const margins = m.map(r=>calcMargin(r.銷售收入,r.銷售成本));
+    const lyMargins = m.map(r=>calcMargin(r.去年同期收入,r.去年同期成本));
+    const ma3 = movingAvg(margins,3);
+    const threshold = parseFloat(document.getElementById('alertThreshold')?.value||30);
+    const labels = m.map(r=>r.時間);
+
+    const avgGM = margins.reduce((a,b)=>a+b,0)/margins.length;
+    const maxGM = Math.max(...margins);
+    const minGM = Math.min(...margins);
+    document.getElementById('seriesKpis').innerHTML = [
+        {label:'平均毛利率',value:avgGM.toFixed(1)+'%',color:C.accent},
+        {label:'最高毛利率',value:maxGM.toFixed(1)+'%',color:C.success},
+        {label:'最低毛利率',value:minGM.toFixed(1)+'%',color:minGM<30?C.danger:C.warning}
+    ].map(k=>`<div class="card"><div class="card-title">${k.label}</div><div class="kpi-value" style="color:${k.color}">${k.value}</div></div>`).join('');
+
+    mkChart('seriesChart',{type:'line',data:{labels,datasets:[
+        {label:'毛利率',data:margins,borderColor:C.accent,backgroundColor:'rgba(99,179,237,0.08)',fill:true,tension:0.4,pointRadius:4,pointBackgroundColor:margins.map(v=>v<threshold?C.danger:C.accent)},
+        {label:'3期移動平均',data:ma3,borderColor:C.warning,borderDash:[4,4],fill:false,tension:0.4,pointRadius:0},
+        {label:'去年同期',data:lyMargins,borderColor:C.purple,borderDash:[2,4],fill:false,tension:0.4,pointRadius:2},
+        {label:`警戒線(${threshold}%)`,data:Array(12).fill(threshold),borderColor:C.danger,borderDash:[6,3],fill:false,pointRadius:0}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults,ticks:{...darkDefaults.ticks,callback:v=>v+'%'}}}}});
+
+    mkChart('seriesRevCostChart',{type:'bar',data:{labels,datasets:[
+        {label:'銷售收入',data:m.map(r=>r.銷售收入),backgroundColor:'rgba(99,179,237,0.7)',borderRadius:4},
+        {label:'銷售成本',data:m.map(r=>r.銷售成本),backgroundColor:'rgba(252,129,129,0.7)',borderRadius:4}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:10}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults}}}});
+
+    mkChart('seriesYoyChart',{type:'bar',data:{labels,datasets:[
+        {label:'本期毛利率',data:margins,backgroundColor:C.palette[0],borderRadius:4},
+        {label:'去年同期',data:lyMargins,backgroundColor:C.palette[3],borderRadius:4}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:10}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults,ticks:{...darkDefaults.ticks,callback:v=>v+'%'}}}}});
+}
+
+// ─── BCG ─────────────────────────────────────────────────────────────────────
+function renderBCG(){
+    const prods = DATA.products;
+    const margins = prods.map(p=>calcMargin(p.銷售單價,p.單位成本));
+    const maxSales = Math.max(...prods.map(p=>p.銷售單價*p.銷售總量));
+
+    mkChart('bcgChart',{type:'bubble',data:{datasets:prods.map((p,i)=>({
+        label:p.產品名稱,
+        data:[{x:p.相對市占率,y:p.市場成長率,r:Math.sqrt(p.銷售單價*p.銷售總量/maxSales)*40+8}],
+        backgroundColor:C.palette[i]+'cc',
+        borderColor:C.palette[i]
+    }))},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:true,color:'#fff',font:{size:10},formatter:(_,ctx)=>ctx.chart.data.datasets[ctx.datasetIndex].label},annotation:{annotations:{
+        vLine:{type:'line',xMin:1,xMax:1,borderColor:'rgba(255,255,255,0.3)',borderDash:[5,5]},
+        hLine:{type:'line',yMin:10,yMax:10,borderColor:'rgba(255,255,255,0.3)',borderDash:[5,5]}
+    }}},scales:{x:{...darkDefaults,title:{display:true,text:'相對市占率',color:'#94a3b8'}},y:{...darkDefaults,title:{display:true,text:'市場成長率(%)',color:'#94a3b8'}}}}});
+
+    mkChart('bcgBarChart',{type:'bar',data:{labels:prods.map(p=>p.產品名稱),datasets:[{label:'毛利率',data:margins,backgroundColor:margins.map(v=>v>=50?C.success:v>=40?C.accent:v>=30?C.warning:C.danger),borderRadius:6}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false},datalabels:{display:true,color:'#fff',font:{size:10},formatter:v=>v.toFixed(1)+'%',anchor:'end',align:'right'}},scales:{x:{...darkDefaults,ticks:{...darkDefaults.ticks,callback:v=>v+'%'}},y:{...darkDefaults}}}});
+
+    document.getElementById('bcgTable').innerHTML = `<table>
+        <thead><tr><th>產品名稱</th><th>類別</th><th>BCG象限</th><th>售價</th><th>成本</th><th>毛利率</th><th>銷量</th></tr></thead>
+        <tbody>${prods.map((p,i)=>{const gm=margins[i];return `<tr>
+            <td style="font-weight:600">${p.產品名稱}</td><td>${p.類別}</td>
+            <td><span class="badge badge-${p.BCG象限==='明星'?'success':p.BCG象限==='金牛'?'info':p.BCG象限==='問題'?'warning':'danger'}">${p.BCG象限}</span></td>
+            <td>$${p.銷售單價}</td><td>$${p.單位成本}</td>
+            <td style="color:${gm>=50?C.success:gm>=40?C.accent:gm>=30?C.warning:C.danger};font-weight:700">${gm.toFixed(1)}%</td>
+            <td>${p.銷售總量.toLocaleString()}</td>
+        </tr>`;}).join('')}</tbody></table>`;
+}
+
+// ─── PRICING ─────────────────────────────────────────────────────────────────
+function renderPricing(){
+    const prods = DATA.products;
+    const maxSales = Math.max(...prods.map(p=>p.銷售單價*p.銷售總量));
+    const margins = prods.map(p=>calcMargin(p.銷售單價,p.單位成本));
+
+    mkChart('pricingScatterChart',{type:'bubble',data:{datasets:prods.map((p,i)=>({
+        label:p.產品名稱,
+        data:[{x:p.銷售單價,y:p.銷售總量,r:margins[i]/3+5}],
+        backgroundColor:C.palette[i]+'cc',borderColor:C.palette[i]
+    }))},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:true,color:'#fff',font:{size:10},formatter:(_,ctx)=>ctx.chart.data.datasets[ctx.datasetIndex].label}},scales:{x:{...darkDefaults,title:{display:true,text:'銷售單價($)',color:'#94a3b8'}},y:{...darkDefaults,title:{display:true,text:'銷售數量',color:'#94a3b8'}}}}});
+
+    const sortedByPrice = [...prods].sort((a,b)=>a.銷售單價-b.銷售單價);
+    const gpAmounts = sortedByPrice.map(p=>(p.銷售單價-p.單位成本)*p.銷售總量);
+    const gpRates = sortedByPrice.map(p=>calcMargin(p.銷售單價,p.單位成本));
+    mkChart('pricingComboChart',{type:'bar',data:{labels:sortedByPrice.map(p=>p.產品名稱),datasets:[
+        {type:'bar',label:'毛利額',data:gpAmounts,backgroundColor:'rgba(99,179,237,0.7)',borderRadius:4,yAxisID:'y'},
+        {type:'line',label:'毛利率',data:gpRates,borderColor:C.warning,backgroundColor:'transparent',tension:0.4,pointRadius:5,yAxisID:'y1'}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults,position:'left'},y1:{...darkDefaults,position:'right',ticks:{...darkDefaults.ticks,callback:v=>v+'%'},grid:{display:false}}}}});
+}
+
+// ─── GEO ─────────────────────────────────────────────────────────────────────
+function renderGeo(){
+    const regions = DATA.regions;
+    const channels = DATA.channels;
+    const dims = ['毛利率','配送效率','售價溢價','市場份額','品牌知名度'];
+
+    mkChart('geoRadarChart',{type:'radar',data:{labels:dims,datasets:regions.map((r,i)=>({
+        label:r.地區名稱,data:dims.map(d=>r[d]),borderColor:C.palette[i],backgroundColor:C.palette[i]+'22',pointRadius:3
+    }))},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{r:{...darkDefaults,ticks:{...darkDefaults.ticks,backdropColor:'transparent'},grid:{color:'rgba(255,255,255,0.08)'},pointLabels:{color:'#94a3b8',font:{size:11}}}}}});
+
+    const chMargins = channels.map(c=>calcMargin(c.銷售額,c.成本));
+    mkChart('channelEfficiencyChart',{type:'bar',data:{labels:channels.map(c=>c.渠道名稱),datasets:[
+        {type:'bar',label:'銷售額',data:channels.map(c=>c.銷售額),backgroundColor:'rgba(99,179,237,0.7)',borderRadius:4,yAxisID:'y'},
+        {type:'bar',label:'毛利額',data:channels.map(c=>c.銷售額-c.成本),backgroundColor:'rgba(104,211,145,0.7)',borderRadius:4,yAxisID:'y'},
+        {type:'line',label:'毛利率',data:chMargins,borderColor:C.warning,backgroundColor:'transparent',tension:0.4,pointRadius:5,yAxisID:'y1'}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults,position:'left'},y1:{...darkDefaults,position:'right',ticks:{...darkDefaults.ticks,callback:v=>v+'%'},grid:{display:false}}}}});
+
+    document.getElementById('geoTable').innerHTML = `<div class="chart-card"><table>
+        <thead><tr><th>地區</th><th>毛利率</th><th>配送效率</th><th>售價溢價</th><th>市場份額</th><th>品牌知名度</th><th>綜合評分</th></tr></thead>
+        <tbody>${regions.map(r=>{const score=(r.毛利率+r.配送效率+r.售價溢價+r.市場份額+r.品牌知名度)/5;return `<tr>
+            <td style="font-weight:600">${r.地區名稱}</td>
+            <td style="color:${r.毛利率>=35?C.success:r.毛利率>=30?C.warning:C.danger}">${r.毛利率}%</td>
+            <td>${r.配送效率}</td><td>${r.售價溢價}</td><td>${r.市場份額}</td><td>${r.品牌知名度}</td>
+            <td><span class="badge badge-${score>=75?'success':score>=60?'info':'warning'}">${score.toFixed(0)}</span></td>
+        </tr>`;}).join('')}</tbody></table></div>`;
+}
+
+// ─── HEATMAP ─────────────────────────────────────────────────────────────────
+function renderHeatmap(){
+    const regions = DATA.regions;
+    const months = DATA.monthly.map(r=>r.時間);
+    const seed = (r,m)=>{ let h=0; for(let c of (r+m)){h=(h*31+c.charCodeAt(0))&0xffff;} return h/0xffff; };
+    const heatData = regions.map(r=>months.map((m)=>+(r.毛利率 + (seed(r.地區名稱,m)-0.5)*8).toFixed(1)));
+    const allVals = heatData.flat();
+    const minV = Math.min(...allVals), maxV = Math.max(...allVals);
+    const colorCell = v=>{ const t=(v-minV)/(maxV-minV); const r=Math.round(252-t*(252-104)); const g=Math.round(129+t*(211-129)); const b=Math.round(129-t*(129-145)); return `rgb(${r},${g},${b})`; };
+    const colW = 52;
+    let html = `<div style="display:inline-block;min-width:${(months.length+1)*colW+80}px;">`;
+    html += `<div style="display:flex;margin-left:80px;">`;
+    months.forEach(m=>{ html+=`<div style="width:${colW}px;text-align:center;font-size:10px;color:var(--text-dim);padding-bottom:4px;">${m}</div>`; });
+    html += '</div>';
+    regions.forEach((r,ri)=>{
+        html += `<div style="display:flex;align-items:center;margin-bottom:3px;">`;
+        html += `<div style="width:80px;font-size:12px;font-weight:600;color:var(--text-main);text-align:right;padding-right:8px;">${r.地區名稱}</div>`;
+        heatData[ri].forEach((v,mi)=>{ html+=`<div class="heatmap-cell" style="width:${colW-3}px;height:36px;background:${colorCell(v)};margin-right:3px;color:#fff;font-size:10px;" title="${r.地區名稱} ${months[mi]}: ${v}%">${v}%</div>`; });
+        html += '</div>';
+    });
+    html += '</div>';
+    document.getElementById('heatmapContainer').innerHTML = html;
+    mkChart('heatmapBarChart',{type:'bar',data:{labels:regions.map(r=>r.地區名稱),datasets:[{label:'平均毛利率',data:heatData.map(row=>+(row.reduce((a,b)=>a+b,0)/row.length).toFixed(1)),backgroundColor:C.palette,borderRadius:6}]},options:{responsive:true,plugins:{legend:{display:false},datalabels:{display:true,color:'#fff',font:{size:10},formatter:v=>v+'%',anchor:'end',align:'top'}},scales:{x:{...darkDefaults},y:{...darkDefaults,ticks:{...darkDefaults.ticks,callback:v=>v+'%'}}}}});
+    mkChart('heatmapLineChart',{type:'line',data:{labels:months,datasets:regions.map((r,i)=>({label:r.地區名稱,data:heatData[i],borderColor:C.palette[i],backgroundColor:'transparent',tension:0.4,pointRadius:2}))},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:10}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults,ticks:{...darkDefaults.ticks,callback:v=>v+'%'}}}}});
+}
+
+// ─── COST ─────────────────────────────────────────────────────────────────────
+function renderCost(){
+    const costs = DATA.costs;
+    const sorted = [...costs].sort((a,b)=>b.金額-a.金額);
+    const total = costs.reduce((s,c)=>s+c.金額,0);
+    let cum = 0;
+    const cumPct = sorted.map(c=>{ cum+=c.金額; return +(cum/total*100).toFixed(1); });
+    mkChart('costParetoChart',{type:'bar',data:{labels:sorted.map(c=>c.成本小類),datasets:[
+        {type:'bar',label:'金額',data:sorted.map(c=>c.金額),backgroundColor:C.palette,borderRadius:4,yAxisID:'y'},
+        {type:'line',label:'累計佔比',data:cumPct,borderColor:C.warning,backgroundColor:'transparent',tension:0,pointRadius:4,yAxisID:'y1'}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults,position:'left'},y1:{...darkDefaults,position:'right',ticks:{...darkDefaults.ticks,callback:v=>v+'%'},grid:{display:false}}}}});
+    mkChart('costYoyChart',{type:'bar',data:{labels:costs.map(c=>c.成本小類),datasets:[
+        {label:'本期',data:costs.map(c=>c.金額),backgroundColor:'rgba(99,179,237,0.7)',borderRadius:4},
+        {label:'去年',data:costs.map(c=>c.去年金額),backgroundColor:'rgba(183,148,244,0.7)',borderRadius:4}
+    ]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults}}}});
+    const direct = costs.filter(c=>c.成本大類==='直接成本');
+    const indirect = costs.filter(c=>c.成本大類==='間接成本');
+    const renderGroup = (items,color)=>items.map(c=>{const pct=(c.金額/total*100).toFixed(1);return `<div style="flex:${c.金額};background:${color};border-radius:6px;margin:2px;padding:8px;display:flex;flex-direction:column;justify-content:center;align-items:center;min-width:60px;cursor:pointer;" title="${c.成本小類}: $${c.金額} (${pct}%)"><div style="font-size:11px;font-weight:700;color:#fff;text-align:center;">${c.成本小類}</div><div style="font-size:10px;color:rgba(255,255,255,0.8)">${pct}%</div></div>`;}).join('');
+    document.getElementById('costTreemap').innerHTML = `<div style="height:100%;display:flex;flex-direction:column;gap:4px;"><div style="font-size:10px;color:var(--text-dim);margin-bottom:4px;">直接成本</div><div style="display:flex;flex:${direct.reduce((s,c)=>s+c.金額,0)};gap:2px;">${renderGroup(direct,'rgba(99,179,237,0.7)')}</div><div style="font-size:10px;color:var(--text-dim);margin:4px 0;">間接成本</div><div style="display:flex;flex:${indirect.reduce((s,c)=>s+c.金額,0)};gap:2px;">${renderGroup(indirect,'rgba(183,148,244,0.7)')}</div></div>`;
+}
+
+// ─── CUSTOMER ─────────────────────────────────────────────────────────────────
+function renderCustomer(){
+    const custs = DATA.customers;
+    mkChart('customerBubbleChart',{type:'bubble',data:{datasets:custs.map((c,i)=>({label:c.客戶名稱,data:[{x:c.LTV總額,y:c.毛利貢獻率,r:c.購買頻率/2+4}],backgroundColor:C.palette[i]+'cc',borderColor:C.palette[i]}))},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:10}}},datalabels:{display:true,color:'#fff',font:{size:9},formatter:(_,ctx)=>ctx.chart.data.datasets[ctx.datasetIndex].label}},scales:{x:{...darkDefaults,title:{display:true,text:'LTV總額(萬)',color:'#94a3b8'}},y:{...darkDefaults,title:{display:true,text:'毛利貢獻率(%)',color:'#94a3b8'}}}}});
+    const levels = ['鑽石','金','銀','銅'];
+    mkChart('customerDonutChart',{type:'doughnut',data:{labels:levels,datasets:[{data:levels.map(l=>custs.filter(c=>c.客戶等級===l).length),backgroundColor:['rgba(183,148,244,0.8)','rgba(246,173,85,0.8)','rgba(148,163,184,0.8)','rgba(252,129,129,0.8)'],borderWidth:0}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8'}},datalabels:{display:true,color:'#fff',font:{size:11,weight:'bold'},formatter:(v,ctx)=>ctx.chart.data.labels[ctx.dataIndex]+'\n'+v}}}});
+    document.getElementById('customerTable').innerHTML = `<div class="chart-card"><table><thead><tr><th>客戶名稱</th><th>LTV總額</th><th>毛利貢獻率</th><th>購買頻率</th><th>客戶等級</th></tr></thead><tbody>${custs.sort((a,b)=>b.LTV總額-a.LTV總額).map(c=>`<tr><td style="font-weight:600">${c.客戶名稱}</td><td>$${c.LTV總額.toLocaleString()}</td><td style="color:${c.毛利貢獻率>=35?C.success:c.毛利貢獻率>=25?C.warning:C.danger}">${c.毛利貢獻率}%</td><td>${c.購買頻率}次/年</td><td><span class="badge badge-${c.客戶等級==='鑽石'?'purple':c.客戶等級==='金'?'warning':c.客戶等級==='銀'?'info':'danger'}">${c.客戶等級}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ─── PROMO ────────────────────────────────────────────────────────────────────
+function renderPromo(){
+    const promos = DATA.promotions;
+    mkChart('promoScatterChart',{type:'scatter',data:{datasets:[{label:'促銷活動',data:promos.map(p=>({x:p.折扣率,y:p.銷量增幅})),backgroundColor:promos.map(p=>p.毛利變動>=0?C.success+'cc':C.danger+'cc'),pointRadius:8}]},options:{responsive:true,plugins:{legend:{display:false},datalabels:{display:true,color:'#fff',font:{size:9},formatter:(_,ctx)=>promos[ctx.dataIndex].活動名稱}},scales:{x:{...darkDefaults,title:{display:true,text:'折扣率(%)',color:'#94a3b8'}},y:{...darkDefaults,title:{display:true,text:'銷量增幅(%)',color:'#94a3b8'}}}}});
+    const sortedROI = [...promos].sort((a,b)=>b.毛利變動-a.毛利變動);
+    mkChart('promoRoiChart',{type:'bar',data:{labels:sortedROI.map(p=>p.活動名稱),datasets:[{label:'毛利變動(pp)',data:sortedROI.map(p=>p.毛利變動),backgroundColor:sortedROI.map(p=>p.毛利變動>=0?C.success+'cc':C.danger+'cc'),borderRadius:4}]},options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false},datalabels:{display:true,color:'#fff',font:{size:10},formatter:v=>(v>=0?'+':'')+v+'pp',anchor:'end',align:'right'}},scales:{x:{...darkDefaults},y:{...darkDefaults}}}});
+    document.getElementById('promoTable').innerHTML = `<div class="chart-card"><table><thead><tr><th>活動名稱</th><th>類型</th><th>折扣率</th><th>銷量增幅</th><th>毛利變動</th><th>評級</th></tr></thead><tbody>${promos.map(p=>`<tr><td style="font-weight:600">${p.活動名稱}</td><td><span class="badge badge-info">${p.活動類型}</span></td><td>${p.折扣率}%</td><td>+${p.銷量增幅}%</td><td style="color:${p.毛利變動>=0?C.success:C.danger};font-weight:700">${p.毛利變動>=0?'+':''}${p.毛利變動}pp</td><td><span class="badge badge-${p.毛利變動>=5?'success':p.毛利變動>=0?'warning':'danger'}">${p.毛利變動>=5?'優秀':p.毛利變動>=0?'普通':'虧損'}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ─── SUPPLIER ─────────────────────────────────────────────────────────────────
+function renderSupplier(){
+    const sups = DATA.suppliers;
+    const totalAmt = sups.reduce((s,r)=>s+r.採購金額,0);
+    const totalQty = sups.reduce((s,r)=>s+r.採購數量,0);
+    const wAvgCost = totalAmt/totalQty;
+    const top1Pct = Math.max(...sups.map(s=>s.採購金額))/totalAmt*100;
+    document.getElementById('supplierKpis').innerHTML = [
+        {label:'總採購金額',value:'$'+totalAmt.toLocaleString(),color:C.accent},
+        {label:'加權平均單位成本',value:'$'+wAvgCost.toFixed(1),color:C.success},
+        {label:'最大供應商集中度',value:top1Pct.toFixed(1)+'%',color:top1Pct>40?C.danger:C.warning}
+    ].map(k=>`<div class="card"><div class="card-title">${k.label}</div><div class="kpi-value" style="color:${k.color}">${k.value}</div></div>`).join('');
+    mkChart('supplierPieChart',{type:'doughnut',data:{labels:sups.map(s=>s.供應商名稱),datasets:[{data:sups.map(s=>s.採購金額),backgroundColor:C.palette,borderWidth:0}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:true,color:'#fff',font:{size:10},formatter:(v,ctx)=>{const t=ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);return (v/t*100).toFixed(1)+'%';}}}}});
+    mkChart('supplierCostChart',{type:'bar',data:{labels:sups.map(s=>s.供應商名稱),datasets:[{label:'單位成本',data:sups.map(s=>s.單位成本),backgroundColor:C.palette,borderRadius:6},{label:'加權平均',data:Array(sups.length).fill(+wAvgCost.toFixed(1)),type:'line',borderColor:C.warning,borderDash:[5,3],fill:false,pointRadius:0}]},options:{responsive:true,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}},datalabels:{display:false}},scales:{x:{...darkDefaults},y:{...darkDefaults}}}});
+    document.getElementById('supplierTable').innerHTML = `<div class="chart-card"><table><thead><tr><th>供應商</th><th>品類</th><th>採購金額</th><th>採購數量</th><th>單位成本</th><th>付款條件</th><th>佔比</th></tr></thead><tbody>${sups.sort((a,b)=>b.採購金額-a.採購金額).map(s=>`<tr><td style="font-weight:600">${s.供應商名稱}</td><td>${s.品類}</td><td>$${s.採購金額.toLocaleString()}</td><td>${s.採購數量.toLocaleString()}</td><td>$${s.單位成本}</td><td>${s.付款條件}</td><td><div class="progress-bar"><div class="progress-fill" style="width:${(s.採購金額/totalAmt*100).toFixed(1)}%;background:${C.accent}"></div></div><span style="font-size:11px">${(s.採購金額/totalAmt*100).toFixed(1)}%</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ─── DAX KNOWLEDGE BASE ───────────────────────────────────────────────────────
+const DAX_DATA = {
+    '基礎指標': [
+        {title:'① 銷售收入 (Sales Revenue)',tag:'基礎',tagColor:'badge-info',desc:'直接加總銷售訂單表中的收入欄位，在當前 Filter Context 下自動完成篩選聚合。',code:`銷售收入 = SUM('F銷售訂單表'[銷售金額])`},
+        {title:'② 銷售成本 (Sales Cost)',tag:'基礎',tagColor:'badge-info',desc:'加總銷售訂單表中的成本欄位。注意：若成本欄位存在空值（Zero Inventory問題），需配合 LASTNONBLANKVALUE 修正。',code:`銷售成本 = SUM('F銷售訂單表'[銷售成本])`},
+        {title:'③ 銷售毛利 (Gross Profit)',tag:'基礎',tagColor:'badge-info',desc:'毛利 = 收入 − 成本，建議引用已定義的度量值而非直接計算欄位，確保 Filter Context 一致性。',code:`銷售毛利 = [銷售收入] - [銷售成本]`},
+        {title:'④ 銷售毛利率 (Gross Margin %)',tag:'基礎',tagColor:'badge-success',desc:'使用 DIVIDE 而非除號「/」，DIVIDE 會自動處理分母為零的情況並回傳 BLANK()，避免除以零錯誤。\n⚠️ 陷阱：不要使用 [銷售毛利] / [銷售收入]，當收入為 0 時會觸發錯誤。',code:`銷售毛利率 = DIVIDE([銷售毛利], [銷售收入])\n// 或加入預設值：\n銷售毛利率 = DIVIDE([銷售毛利], [銷售收入], 0)`},
+        {title:'⑤ 加權平均採購成本 (Weighted Average Cost)',tag:'重要',tagColor:'badge-warning',desc:'❌ 錯誤做法：直接用 AVERAGE(單價)，完全忽略採購數量的權重，導致計算結果失真。\n✅ 正確做法：用總金額除以總數量。\n例：採購1=800件@$135，採購2=200件@$174\n錯誤結果：($135+$174)/2 = $154.5 ← 偏高！\n正確結果：(800×$135 + 200×$174) / (800+200) = $142.8',code:`// ❌ 錯誤做法（簡單平均）\n平均採購成本_錯誤 = AVERAGE('F存貨變動表'[單位成本])\n\n// ✅ 正確做法（加權平均）\n平均採購成本 = DIVIDE(\n    SUM('F存貨變動表'[采購入庫金額]),\n    SUM('F存貨變動表'[采購入庫數量])\n)`}
+    ],
+    '時間智能': [
+        {title:'⑥ 零庫存成本修正 (LASTNONBLANKVALUE)',tag:'進階',tagColor:'badge-purple',desc:'業務問題：當某月有銷售但 ERP 系統中無期末庫存時，成本公式會因單位成本為空而導致銷售成本為 0。\n解決方案：使用 LASTNONBLANKVALUE 向前填充最後一個有效成本。',code:`優化後單位成本 = \n    CALCULATE(\n        LASTNONBLANKVALUE(\n            日期表[日期],       -- 在日期序列上搜索\n            [單位成本]           -- 目標度量值\n        ),\n        FILTER(\n            ALL(日期表),         -- 移除日期的 Filter Context\n            日期表[日期] <= MAX(日期表[日期])  -- 只看截至當前日期\n        )\n    )`},
+        {title:'⑦ 連續下降天數 (Consecutive Decline Days)',tag:'預警',tagColor:'badge-danger',desc:'商業意義：持續的價格折扣會讓消費者產生等待更低價的預期心理。監控連續下跌天數，防止折扣策略失控侵蝕品牌價值。',code:`連續下降天數 = \nVAR X = MAX(日期表[日期])              -- Step1: 定義當前日期\nVAR 所有日期 = VALUES(日期表[日期])\nVAR 下跌日期 = FILTER(所有日期, [毛利率] < EARLIER([毛利率]))\nVAR AA = EXCEPT(所有日期, 下跌日期)   -- Step2: 找出上漲或持平的日期\nVAR BB = MAXX(\n    FILTER(AA, [日期列值] < X),        -- Step3: 離當前最近的上漲日\n    [日期列值]\n)\nRETURN INT(X - BB)                    -- Step4: 計算天數差`},
+        {title:'⑧ 矩陣總計修正 (Grand Total Bug Fix)',tag:'陷阱',tagColor:'badge-danger',desc:'問題根源：在沒有行上下文 (Row Context) 時，度量值在總計行計算整個期間的最大值，而不是明細行的加總，導致總計與明細對不上。\n修正方法：使用 MAXX + VALUES 黃金組合。',code:`// ❌ 問題：總計行顯示整個期間最大連續下跌天數 (如5)\n//    而非期末的實際值 (如2)\n\n// ✅ 修正：使用 MAXX + VALUES 黃金組合\n連續下降天數_修正 = \n    MAXX(\n        VALUES(日期表[日期]),          -- 在總計行返回所有日期列表\n        [連續下降天數原始]              -- 對每個日期迭代計算後聚合\n    )`},
+        {title:'⑨ YoY 毛利率對比 (Year-over-Year)',tag:'時間智能',tagColor:'badge-info',desc:'使用 SAMEPERIODLASTYEAR 計算去年同期毛利率，需要日期表支援。',code:`去年同期毛利率 = \nCALCULATE(\n    [銷售毛利率],\n    SAMEPERIODLASTYEAR(日期表[日期])\n)\n\n毛利率YoY變動 = [銷售毛利率] - [去年同期毛利率]`}
+    ],
+    '進階分析': [
+        {title:'⑩ SWITCH(TRUE) 多條件品類警戒線',tag:'進階',tagColor:'badge-purple',desc:'應用場景：不同產品類別有不同的行業基準毛利率，需為每個品類設定專屬的警戒閾值，而非使用統一門檻。',code:`當前品類警戒線 = \nVAR SelectedCategory = SELECTEDVALUE('D產品表'[產品類別])\nRETURN\n    SWITCH(TRUE(),\n        SelectedCategory = "服飾類", [服飾類警戒線·值],\n        SelectedCategory = "飾品類", [飾品類警戒線·值],\n        SelectedCategory = "鞋類",   [鞋類警戒線·值],\n        [通用警戒線·值]  -- Else 默認值\n    )`},
+        {title:'⑪ SUMMARIZE + FILTER 低毛利銷售篩選',tag:'進階',tagColor:'badge-purple',desc:'應用場景：計算低於品類警戒線的平均毛利率。SUMMARIZE 建立虛擬表，FILTER 對虛擬表進行二次過濾，CALCULATE 將過濾後的表作為新的上下文傳入。',code:`VAR A  = SELECTEDVALUE('D產品表'[產品類別])\nVAR X1 = [服裝類毛利率警戒線·值]\nVAR AA = SWITCH(TRUE(),\n    A = "服裝類",\n        VAR Y = SUMMARIZE('F銷售訂單表',\n                    'D產品表'[產品名稱],\n                    'F銷售訂單表'[銷售單價])   -- 建立虛擬彙總表\n        VAR Z = FILTER(Y, [銷售毛利率] <= X1) -- 篩選低於警戒線的行\n        RETURN CALCULATE([銷售毛利率], Z),    -- 在篩選上下文中計算\n    BLANK()\n)`},
+        {title:'⑫ CONCATENATEX 異常日期追蹤',tag:'進階',tagColor:'badge-purple',desc:'應用場景：識別並列出某個產品低於警戒線銷售的「所有問題日期」。傳統度量值只能返回單一數值，CONCATENATEX 可將多行文本串接成單一字串。',code:`低毛利銷售日期清單 = \nCONCATENATEX(\n    CALCULATETABLE(                          -- Step1: 建立問題日期虛擬表\n        VALUES('F銷售訂單表'[訂單時間]),     -- 取出唯一日期值\n        Z                                    -- Z = 低毛利銷售的過濾條件表\n    ),\n    [訂單時間],                              -- Step2: 要串接的欄位\n    ", ",                                    -- Step3: 分隔符\n    [訂單時間]                               -- Step4: 按日期升序排列\n)\n// 輸出範例：\n// "2018/11/09, 2018/11/12, 2018/11/15..."`},
+        {title:'⑬ 毛利瀑布分解 (Waterfall Decomposition)',tag:'V3.0新增',tagColor:'badge-success',desc:'將毛利變動分解為量效應、價效應、成本效應三個維度，幫助管理者精準定位毛利下滑的根因。',code:`量效應 = \n    ([本期銷量] - [去年銷量]) * [去年平均售價] * [去年毛利率]\n\n價效應 = \n    [本期銷量] * ([本期平均售價] - [去年平均售價]) * [去年毛利率]\n\n成本效應 = \n    -[本期銷量] * ([本期單位成本] - [去年單位成本])\n\n毛利變動 = [量效應] + [價效應] + [成本效應]`}
+    ],
+    '視覺化': [
+        {title:'⑭ 動態標題 (Dynamic Title)',tag:'視覺化',tagColor:'badge-info',desc:'應用場景：散點圖等圖表需隨 Slicer 選擇自動更新標題，讓使用者永遠清楚正在分析的對象。',code:`散點圖標題 = \n    SELECTEDVALUE(\n        'D產品表'[產品名稱],\n        "全部產品"           -- 無選擇時的預設文字\n    )\n    & " - 銷售單價 vs 銷售數量 vs 毛利率"`},
+        {title:'⑮ 動態警戒線 (Dynamic Alert Line)',tag:'視覺化',tagColor:'badge-info',desc:'在 Power BI「建模」→「新參數」中建立毛利率警戒線參數（小數，0~1，增量0.01），產生可互動調整的 Slicer。結合 SWITCH 函數，可為不同品類設定專屬警戒閾值。',code:`// 建立參數後自動生成：\n毛利率警戒線 = 'Parameter'[Parameter Value]\n\n// 在圖表中使用：\n警戒線標記 = \n    IF([銷售毛利率] < [毛利率警戒線], "⚠️ 低於警戒線", "✅ 正常")`},
+        {title:'⑯ 星型結構數據模型 (Star Schema)',tag:'架構',tagColor:'badge-success',desc:'毛利分析的核心是以事實表為中心，連接多個維度表的星型模型（Star Schema）。\n事實表：F銷售訂單表、F存貨變動表\n維度表：D產品表、D客戶表、D地區表、D日期表\n關係：一對多（維度表 → 事實表）',code:`// 建議的表格命名規範：\n// F = 事實表 (Fact Table)\n// D = 維度表 (Dimension Table)\n\n// 關鍵關係：\n// D日期表[日期] → F銷售訂單表[訂單日期]  (一對多)\n// D產品表[產品ID] → F銷售訂單表[產品ID]  (一對多)\n// D客戶表[客戶ID] → F銷售訂單表[客戶ID]  (一對多)`}
+    ]
+};
+
+let currentDaxTab = '基礎指標';
+function switchDaxTab(tab, el){
+    currentDaxTab = tab;
+    document.querySelectorAll('#daxTabs .tab').forEach(t=>t.classList.remove('active'));
+    el.classList.add('active');
+    renderDaxContent();
+}
+function renderDaxContent(){
+    const items = DAX_DATA[currentDaxTab]||[];
+    document.getElementById('daxContent').innerHTML = items.map((d,i)=>`
+        <div class="dax-card">
+            <div class="dax-header" onclick="toggleDax(${i})">
+                <div class="dax-title">${d.title}</div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="badge ${d.tagColor}">${d.tag}</span>
+                    <span id="dax-arrow-${i}" style="color:var(--text-dim);transition:transform 0.2s;">▼</span>
+                </div>
+            </div>
+            <div class="dax-body" id="dax-body-${i}">
+                <div class="dax-desc">${d.desc.replace(/\n/g,'<br>')}</div>
+                <div class="code-block">${d.code.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+            </div>
+        </div>`).join('');
+}
+function toggleDax(i){
+    const body = document.getElementById('dax-body-'+i);
+    const arrow = document.getElementById('dax-arrow-'+i);
+    body.classList.toggle('open');
+    arrow.style.transform = body.classList.contains('open')?'rotate(180deg)':'';
+}
+function renderDax(){ renderDaxContent(); }
+
+// ─── FILE IMPORT / EXPORT ─────────────────────────────────────────────────────
+function handleFile(e){ const f=e.target.files[0]; if(f) processFile(f); e.target.value=''; }
+function processFile(file){
+    const ext = file.name.split('.').pop().toLowerCase();
+    const reader = new FileReader();
+    reader.onload = function(e){
+        try{
+            if(ext==='json'){
+                const imported = JSON.parse(e.target.result);
+                Object.assign(DATA, imported);
+                document.getElementById('lastUpdated').innerText = '最後更新: '+new Date().toISOString().slice(0,10)+' (JSON匯入)';
+                renderAll();
+                alert('✅ JSON 資料匯入成功！');
+            } else {
+                const wb = XLSX.read(e.target.result, {type:'binary'});
+                const sheets = {'月度數據':'monthly','產品數據':'products','成本數據':'costs','客戶數據':'customers','地區數據':'regions','渠道數據':'channels','促銷數據':'promotions','供應商數據':'suppliers','目標設定':'targets'};
+                let imported = {}, names = [];
+                wb.SheetNames.forEach(name=>{ if(sheets[name]){ imported[sheets[name]]=XLSX.utils.sheet_to_json(wb.Sheets[name]); names.push(name); } });
+                if(Object.keys(imported).length>0){
+                    Object.assign(DATA, imported);
+                    document.getElementById('lastUpdated').innerText = '最後更新: '+new Date().toISOString().slice(0,10)+' (已匯入)';
+                    renderAll();
+                    alert('✅ 成功匯入 '+names.length+' 個工作表：\n'+names.join('、'));
+                } else {
+                    alert('❌ 找不到符合規格的工作表名稱。\n請點選「匯入格式說明」查看詳細欄位要求。');
+                }
+            }
+        } catch(err){ alert('❌ 檔案解析錯誤：'+err.message); }
+    };
+    if(ext==='json') reader.readAsText(file);
+    else reader.readAsBinaryString(file);
+}
+
+function exportData(type){
+    if(type==='json'){
+        const blob = new Blob([JSON.stringify(DATA,null,2)],{type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href=url; a.download='GrossProfitOS_V3_'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+        URL.revokeObjectURL(url);
+    } else {
+        const wb = XLSX.utils.book_new();
+        const sheetMap = {月度數據:'monthly',產品數據:'products',成本數據:'costs',客戶數據:'customers',地區數據:'regions',渠道數據:'channels',促銷數據:'promotions',供應商數據:'suppliers',目標設定:'targets'};
+        Object.entries(sheetMap).forEach(([name,key])=>{ if(DATA[key]){ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(DATA[key]),name); } });
+        XLSX.writeFile(wb,'GrossProfitOS_V3_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    }
+}
+
+function downloadSampleExcel(){
+    const wb = XLSX.utils.book_new();
+    const sheetMap = {月度數據:'monthly',產品數據:'products',成本數據:'costs',客戶數據:'customers',地區數據:'regions',渠道數據:'channels',促銷數據:'promotions',供應商數據:'suppliers',目標設定:'targets'};
+    Object.entries(sheetMap).forEach(([name,key])=>{ XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(DEFAULT_DATA[key]),name); });
+    XLSX.writeFile(wb,'Gross_Profit_OS_V3.0_範例資料.xlsx');
+}
+
+function resetData(){
+    if(confirm('確定要清除自訂數據並重置為範例資料嗎？')){
+        DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
+        document.getElementById('lastUpdated').innerText = '最後更新: '+new Date().toISOString().slice(0,10)+' (範例)';
+        renderAll();
+    }
+}
+
+function setupDragAndDrop(){
+    const dz = document.getElementById('dropZone');
+    let cnt = 0;
+    window.addEventListener('dragenter',e=>{ e.preventDefault(); cnt++; dz.classList.add('active'); });
+    window.addEventListener('dragleave',()=>{ cnt--; if(cnt<=0){ dz.classList.remove('active'); cnt=0; } });
+    window.addEventListener('dragover',e=>e.preventDefault());
+    dz.addEventListener('drop',e=>{ e.preventDefault(); dz.classList.remove('active'); cnt=0; if(e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
+}
+
+function renderAll(){
+    const active = document.querySelector('.page.active');
+    if(active) renderPage(active.id);
+    updateAlertBadge();
+}
+
+function updateAlertBadge(){
+    const m = DATA.monthly;
+    const margins = m.map(r=>calcMargin(r.銷售收入,r.銷售成本));
+    const curGM = margins[margins.length-1];
+    let cnt = 0;
+    if(curGM<30) cnt++;
+    let consec=0,maxC=0;
+    for(let i=1;i<margins.length;i++){ if(margins[i]<margins[i-1]) consec++; else consec=0; maxC=Math.max(maxC,consec); }
+    if(maxC>=3) cnt++;
+    const lowProds = DATA.products.filter(p=>calcMargin(p.銷售單價,p.單位成本)<35);
+    if(lowProds.length>0) cnt++;
+    document.getElementById('alertBadge').textContent = cnt;
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+window.onload = function(){
+    setupDragAndDrop();
+    document.getElementById('lastUpdated').innerText = '最後更新: '+new Date().toISOString().slice(0,10)+' (範例)';
+    renderOverview();
+    updateAlertBadge();
+};
+</script>
+</body>
+</html>
+
