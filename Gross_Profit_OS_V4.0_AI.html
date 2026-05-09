@@ -4317,7 +4317,8 @@
             customBaseUrl: '', temperature: 0.3, maxTokens: 4096,
             useStream: true, chatHistory: [], isStreaming: false,
             currentPageId: 'p-overview', abortController: null,
-            savedKeys: {}, apiFormat: 'openai'
+            savedKeys: {}, savedBaseUrls: {}, apiFormat: 'openai',
+            corsProxyMode: 'off', corsProxyUrl: ''  // off | local | custom
         };
 
         // ══ AI-2. 面板 UI 控制 ══
@@ -4466,8 +4467,7 @@
             const stream = (document.getElementById('ai-stream-mode') || {}).value !== '0';
             const customUrl = (document.getElementById('ai-custom-url') || {}).value || '';
             const apiFormat = (document.getElementById('ai-api-format') || {}).value || 'openai';
-            const useCorsProxy = (document.getElementById('ai-cors-proxy') || {}).value === '1';
-            return { key, model, temp, maxTok, stream, customUrl, apiFormat, useCorsProxy };
+            return { key, model, temp, maxTok, stream, customUrl, apiFormat };
         }
 
         // ══ AI-4. Module A：設定持久化 ══
@@ -4486,7 +4486,8 @@
             const payload = {
                 provider: aiState.provider, model: cfg.model, customBaseUrl: cfg.customUrl,
                 temperature: cfg.temp, maxTokens: cfg.maxTok, useStream: cfg.stream, apiFormat: cfg.apiFormat,
-                useCorsProxy: cfg.useCorsProxy, savedKeys: saved, savedBaseUrls: savedUrls
+                corsProxyMode: aiState.corsProxyMode, corsProxyUrl: aiState.corsProxyUrl,
+                savedKeys: saved, savedBaseUrls: savedUrls
             };
             try { localStorage.setItem(CVP_AI_STORAGE_KEY, JSON.stringify(payload)); _refreshSaveHint(true); _showAIToast('設定已儲存至本機瀏覽器'); }
             catch (e) { _showAIToast('儲存失敗：' + e.message, true); }
@@ -4503,7 +4504,10 @@
                 if (s.maxTokens) aiState.maxTokens = s.maxTokens;
                 if (s.useStream != null) aiState.useStream = s.useStream;
                 if (s.apiFormat) aiState.apiFormat = s.apiFormat;
-                if (s.useCorsProxy != null) aiState.useCorsProxy = s.useCorsProxy;
+                // 向後相容：舊版 boolean useCorsProxy → 新版 string mode
+                if (s.corsProxyMode) aiState.corsProxyMode = s.corsProxyMode;
+                else if (s.useCorsProxy === true) aiState.corsProxyMode = 'local';
+                if (s.corsProxyUrl) aiState.corsProxyUrl = s.corsProxyUrl;
                 if (s.savedKeys) aiState.savedKeys = s.savedKeys;
                 function applyToUI() {
                     const provSel = document.getElementById('ai-provider');
@@ -4525,8 +4529,11 @@
                     const fmtSel = document.getElementById('ai-api-format');
                     if (fmtSel && s.apiFormat) fmtSel.value = s.apiFormat;
                     const corsSel = document.getElementById('ai-cors-proxy');
-                    const corsHintEl = document.getElementById('ai-cors-proxy-hint');
-                    if (corsSel && s.useCorsProxy != null) { corsSel.value = s.useCorsProxy ? '1' : '0'; if (corsHintEl) corsHintEl.style.display = s.useCorsProxy ? 'flex' : 'none'; }
+                    if (corsSel) { corsSel.value = aiState.corsProxyMode || 'off'; }
+                    const corsUrlRow = document.getElementById('ai-cors-proxy-url-row');
+                    if (corsUrlRow) corsUrlRow.style.display = aiState.corsProxyMode === 'custom' ? 'flex' : 'none';
+                    const corsUrlInp = document.getElementById('ai-cors-proxy-url');
+                    if (corsUrlInp) corsUrlInp.value = aiState.corsProxyUrl || '';
                     _fillKeyForProvider(aiState.provider); _refreshSaveHint();
                 }
                 if (document.readyState === 'complete' || document.readyState === 'interactive') applyToUI();
@@ -4557,10 +4564,22 @@
 
         // ══ AI-6. Module C：雙 API 格式核心呼叫 ══
 
-        function _corsProxyUrl() {
-            // 本地 CORS 代理伺服器端點（需搭配 cors_proxy.py 使用）
-            const port = location.port || '8080';
-            return location.protocol + '//' + location.hostname + ':' + port + '/proxy?url=';
+        function wrapWithProxy(originalUrl) {
+            if (aiState.corsProxyMode === 'local') {
+                return `http://localhost:8080/proxy?url=${encodeURIComponent(originalUrl)}`;
+            }
+            if (aiState.corsProxyMode === 'custom' && aiState.corsProxyUrl) {
+                const base = aiState.corsProxyUrl.replace(/\/$/, '');
+                return `${base}?url=${encodeURIComponent(originalUrl)}`;
+            }
+            return originalUrl;
+        }
+        function onProxyModeChange() {
+            const sel = document.getElementById('ai-cors-proxy');
+            const row = document.getElementById('ai-cors-proxy-url-row');
+            if (!sel || !row) return;
+            row.style.display = sel.value === 'custom' ? 'flex' : 'none';
+            aiState.corsProxyMode = sel.value;
         }
 
         async function callAI(messages) {
@@ -4598,9 +4617,8 @@
             if (sysContent) cleanMsgs.unshift({ role: 'system', content: sysContent });
 
             const targetUrl = baseUrl + '/chat/completions';
-            const url = cfg.useCorsProxy ? (_corsProxyUrl() + encodeURIComponent(targetUrl)) : targetUrl;
+            const url = wrapWithProxy(targetUrl);
             const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.key };
-            if (cfg.useCorsProxy) headers['X-Target-Url'] = targetUrl;
             const reqBody = { model, messages: cleanMsgs, temperature: cfg.temp, max_tokens: cfg.maxTok, stream: cfg.stream };
             if (aiState.provider === 'minimax' && (baseUrl.includes('minimaxi.com') || baseUrl.includes('minimax.chat'))) {
                 reqBody.reasoning_split = true;
@@ -4658,10 +4676,9 @@
             const body = { model, max_tokens: cfg.maxTok, messages: cleanedMsgs, stream: cfg.stream };
             if (systemContent) body.system = systemContent;
             const targetUrl = baseUrl + '/messages';
-            const msgUrl = cfg.useCorsProxy ? (_corsProxyUrl() + encodeURIComponent(targetUrl)) : targetUrl;
+            const msgUrl = wrapWithProxy(targetUrl);
             const headers = { 'Content-Type': 'application/json', 'x-api-key': cfg.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' };
-            if (cfg.useCorsProxy) headers['X-Target-Url'] = targetUrl;
-            console.log('[CVP-AI] POST →', msgUrl, 'model:', model, 'stream:', cfg.stream, 'proxy:', !!cfg.useCorsProxy);
+            console.log('[CVP-AI] POST →', msgUrl, 'model:', model, 'stream:', cfg.stream, 'proxy:', aiState.corsProxyMode);
             const resp = await fetch(msgUrl, {
                 method: 'POST',
                 headers,
@@ -5026,12 +5043,8 @@
             if (custMdl) custMdl.addEventListener('input', () => { aiState.model = custMdl.value; });
             const fmtSel = document.getElementById('ai-api-format');
             if (fmtSel) fmtSel.addEventListener('change', () => { aiState.apiFormat = fmtSel.value; });
-            const corsProxySel = document.getElementById('ai-cors-proxy');
-            const corsHint = document.getElementById('ai-cors-proxy-hint');
-            if (corsProxySel) corsProxySel.addEventListener('change', () => {
-                aiState.useCorsProxy = corsProxySel.value === '1';
-                if (corsHint) corsHint.style.display = corsProxySel.value === '1' ? 'flex' : 'none';
-            });
+            const corsProxyUrlInp = document.getElementById('ai-cors-proxy-url');
+            if (corsProxyUrlInp) corsProxyUrlInp.addEventListener('input', () => { aiState.corsProxyUrl = corsProxyUrlInp.value.trim(); });
             const keyInp = document.getElementById('ai-apikey');
             if (keyInp) keyInp.addEventListener('input', () => { aiState.apiKey = keyInp.value; setAIStatus(keyInp.value ? 'ready' : 'idle'); });
             const urlInp = document.getElementById('ai-custom-url');
@@ -5129,14 +5142,15 @@
                 </div>
                 <div class="ai-config-row">
                     <span class="ai-config-label">CORS 代理</span>
-                    <select id="ai-cors-proxy">
-                        <option value="0">停用（直連 API）</option>
-                        <option value="1">啟用（透過本地代理）</option>
+                    <select id="ai-cors-proxy" onchange="onProxyModeChange()">
+                        <option value="off">關閉（直連）</option>
+                        <option value="local">本機代理（:8080）</option>
+                        <option value="custom">自訂代理 URL</option>
                     </select>
                 </div>
-                <div class="ai-config-row" id="ai-cors-proxy-hint"
-                    style="display:none;font-size:0.65rem;color:var(--warning);margin-top:-4px;padding-left:2px">
-                    ⚡ 需先啟動代理伺服器：<code>python cors_proxy.py</code>
+                <div class="ai-config-row" id="ai-cors-proxy-url-row" style="display:none">
+                    <span class="ai-config-label">代理 URL</span>
+                    <input type="text" id="ai-cors-proxy-url" placeholder="https://your-app.vercel.app/api/proxy" style="flex:1" />
                 </div>
                 <div class="ai-config-row" id="ai-custom-model-row" style="display:none">
                     <span class="ai-config-label">模型名稱</span>
