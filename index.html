@@ -1589,6 +1589,25 @@
             flex-shrink: 0
         }
 
+        .ai-config-toggle {
+            display: flex; align-items: center; justify-content: space-between;
+            cursor: pointer; padding: 2px 0 6px; user-select: none;
+            font-size: 0.72rem; color: var(--text-dim);
+        }
+        .ai-config-toggle:hover { color: var(--accent); }
+        .ai-config-chevron { transition: transform 0.25s; display: inline-block; font-size: 0.63rem; }
+        .ai-config-inner { overflow: hidden; transition: max-height 0.32s ease; max-height: 800px; }
+        .ai-config-inner.collapsed { max-height: 0; }
+
+        .quick-reply-wrap { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 4px 2px; }
+        .quick-reply-btn {
+            font-size: 0.68rem; padding: 4px 11px; border-radius: 12px;
+            background: rgba(99,179,237,0.1); border: 1px solid rgba(99,179,237,0.25);
+            color: var(--accent); cursor: pointer; transition: background 0.18s, border-color 0.18s;
+            white-space: nowrap;
+        }
+        .quick-reply-btn:hover { background: rgba(99,179,237,0.22); border-color: rgba(99,179,237,0.5); }
+
         .ai-config-row {
             display: flex;
             align-items: center;
@@ -4565,6 +4584,9 @@
         // ══ AI-6. Module C：雙 API 格式核心呼叫 ══
 
         function wrapWithProxy(originalUrl) {
+            if (aiState.corsProxyMode === 'vercel') {
+                return `/api/proxy?url=${encodeURIComponent(originalUrl)}`;
+            }
             if (aiState.corsProxyMode === 'local') {
                 return `http://localhost:8080/proxy?url=${encodeURIComponent(originalUrl)}`;
             }
@@ -4603,7 +4625,7 @@
                 let fullText = '';
                 if (fmt === 'anthropic') fullText = await _callAnthropic(messages, model, baseUrl, cfg, msgEl);
                 else fullText = await _callOpenAI(messages, model, baseUrl, cfg, msgEl);
-                if (fullText !== null) { aiState.chatHistory.push({ role: 'assistant', content: fullText }); trimChatHistory(); saveAIChatCache(); }
+                if (fullText !== null) { aiState.chatHistory.push({ role: 'assistant', content: fullText }); trimChatHistory(); saveAIChatCache(); showQuickReplies(aiState.currentPageId); }
                 setAIStatus('ready'); return fullText;
             } catch (err) { _handleAIError(err, msgEl); setAIStatus('error'); return null; }
             finally {
@@ -5030,6 +5052,66 @@
             t = t.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>'); return '<p>' + t + '</p>';
         }
 
+        // ══ AI-13b. 設定折疊切換 ══
+
+        function toggleAIConfig() {
+            const inner = document.getElementById('ai-config-inner');
+            const chevron = document.getElementById('ai-config-chevron');
+            if (!inner) return;
+            const collapsed = inner.classList.toggle('collapsed');
+            if (chevron) chevron.style.transform = collapsed ? 'rotate(180deg)' : '';
+            try { localStorage.setItem('gpAiConfigCollapsed', collapsed ? '1' : '0'); } catch {}
+        }
+
+        // ══ AI-13c. Quick Reply 動態建議按鈕 ══
+
+        const QUICK_REPLIES = {
+            'p-overview':     ['哪個產品線毛利率最差？', '整體毛利趨勢如何？', '改善毛利率的首要行動？'],
+            'p-executive':    ['本季 vs 去年同期差異？', '哪個區域表現最弱？', '執行層面最需關注什麼？'],
+            'p-alert':        ['哪些預警最緊急？', '預警的根本原因分析', '如何優化預警閾值設定？'],
+            'p-waterfall':    ['最大的毛利流失在哪裡？', '定價 vs 成本的影響孰大？', '如何解讀這張瀑布圖？'],
+            'p-dupont':       ['杜邦哪個驅動因子最弱？', '資產周轉率如何改善？', 'ROE 三要素哪個最能提升？'],
+            'p-breakeven':    ['損益兩平安全邊際多少？', '降低固定成本的效益？', '如何加速達到損益兩平？'],
+            'p-sensitivity':  ['哪個變數對毛利最敏感？', '最壞情境下毛利率為何？', '定價 1% 變動的影響？'],
+            'p-scenario':     ['最樂觀情境假設合理嗎？', '悲觀情境觸發條件是什麼？', '情境壓力測試建議？'],
+            'p-series':       ['趨勢出現反轉訊號嗎？', '季節性對毛利影響多大？', '未來兩季的展望？'],
+            'p-bcg':          ['明星產品如何維持競爭力？', 'Question Mark 轉型策略？', 'Dog 產品退場時機評估'],
+            'p-abc':          ['A 類產品資源配置建議？', 'C 類產品是否考慮退場？', 'ABC 結構如何改善集中度？'],
+            'p-pricing':      ['定價是否低估了毛利空間？', '漲價的市場接受度如何？', '與競品定價差距分析'],
+            'p-contribution': ['貢獻度最高的客戶/產品？', '如何提升低貢獻業務線？', '貢獻度 vs 銷售量的取捨？'],
+            'p-geo':          ['哪個地區成長潛力最大？', '地區差異的根本原因？', '地區資源重新配置建議'],
+            'p-heatmap':      ['熱力圖最差的交叉點？', '如何改善最冷門區塊？', '找出週期性規律'],
+            'p-cost':         ['成本結構最大改善機會？', '固定 vs 變動比例是否健康？', '成本控制優先順序'],
+            'p-customer':     ['最高 LTV 客戶的特徵？', '流失風險客戶如何識別？', '客戶集中度風險評估'],
+            'p-promo':        ['促銷 ROI 哪個方案最高？', '哪些促銷毛利侵蝕最重？', '最佳促銷組合策略？'],
+            'p-supplier':     ['供應商議價空間評估？', '單一供應商依賴風險？', '採購成本降低策略'],
+            'p-dax':          ['這個 DAX 公式如何優化？', '如何加入時間智能函數？', 'Power BI 報表佈局建議'],
+            'p-benchmark':    ['與行業標竿差距的原因？', '最快縮小差距的行動？', '哪個同業最值得學習？'],
+            'p-insights':     ['洞察中最重要的發現？', '下一步行動計劃建議', '還有哪些盲點需要挖掘？'],
+        };
+
+        function showQuickReplies(pageId) {
+            const c = document.getElementById('ai-messages');
+            if (!c) return;
+            c.querySelector('.quick-reply-wrap')?.remove();
+            const suggestions = QUICK_REPLIES[pageId] || QUICK_REPLIES['p-overview'];
+            const wrap = document.createElement('div');
+            wrap.className = 'quick-reply-wrap';
+            suggestions.forEach(text => {
+                const btn = document.createElement('button');
+                btn.className = 'quick-reply-btn';
+                btn.textContent = text;
+                btn.onclick = () => {
+                    wrap.remove();
+                    const input = document.getElementById('ai-input');
+                    if (input) { input.value = text; sendAIMessage(); }
+                };
+                wrap.appendChild(btn);
+            });
+            c.appendChild(wrap);
+            c.scrollTop = c.scrollHeight;
+        }
+
         // ══ AI-14. 面板初始化 ══
 
         function initAIPanelEvents() {
@@ -5054,6 +5136,21 @@
             updateModelOptions(); _toggleCustomRows(aiState.provider);
             document.querySelectorAll('.nav-item').forEach(btn => { btn.addEventListener('click', () => { setTimeout(updateAIContextLabel, 50); }); });
             loadAISettings(); _checkRestoreBtn();
+            // 自動偵測 Vercel 環境，且使用者未曾設定過代理時預設選 vercel
+            if (location.hostname.endsWith('.vercel.app') && aiState.corsProxyMode === 'off') {
+                aiState.corsProxyMode = 'vercel';
+                const corsSel = document.getElementById('ai-cors-proxy');
+                if (corsSel) corsSel.value = 'vercel';
+            }
+            // 還原折疊狀態
+            try {
+                if (localStorage.getItem('gpAiConfigCollapsed') === '1') {
+                    const inner = document.getElementById('ai-config-inner');
+                    const chevron = document.getElementById('ai-config-chevron');
+                    if (inner) { inner.classList.add('collapsed'); }
+                    if (chevron) chevron.style.transform = 'rotate(180deg)';
+                }
+            } catch {}
         }
 
         // 在頁面載入後初始化 AI 面板
@@ -5077,6 +5174,11 @@
             <button class="ai-panel-close" onclick="closeAIPanel()" title="關閉">✕</button>
         </div>
         <div class="ai-config-section">
+            <div class="ai-config-toggle" onclick="toggleAIConfig()" title="折疊/展開 AI 設定">
+                <span>⚙ AI 設定</span>
+                <span class="ai-config-chevron" id="ai-config-chevron">▲</span>
+            </div>
+            <div class="ai-config-inner" id="ai-config-inner">
             <div class="ai-config-row">
                 <span class="ai-config-label">供應商</span>
                 <select id="ai-provider" onchange="onProviderChange()">
@@ -5144,6 +5246,7 @@
                     <span class="ai-config-label">CORS 代理</span>
                     <select id="ai-cors-proxy" onchange="onProxyModeChange()">
                         <option value="off">關閉（直連）</option>
+                        <option value="vercel">Vercel 本站 /api/proxy</option>
                         <option value="local">本機代理（:8080）</option>
                         <option value="custom">自訂代理 URL</option>
                     </select>
@@ -5175,6 +5278,7 @@
                     title="清除已儲存設定">🗑 清除</button>
             </div>
             <div class="ai-token-hint" id="ai-token-hint"></div>
+            </div><!-- /.ai-config-inner -->
         </div>
         <div id="ai-messages" class="ai-messages">
             <div class="ai-welcome">

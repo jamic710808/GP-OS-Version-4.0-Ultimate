@@ -1,0 +1,14 @@
+{
+  "name": "gp-os-vercel",
+  "version": "4.0.0",
+  "description": "毛利分析互動式資訊看板 Gross Profit OS v4.0 — Vercel 部署版",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  }
+}
